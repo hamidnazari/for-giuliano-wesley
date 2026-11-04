@@ -116,6 +116,7 @@ class Verdict(Strict):
 class Board(Strict):
     run_id: str = Field(min_length=1)
     cards: dict[str, Card] = Field(default_factory=dict)
+    applied_ops: set[str] = set()  # op ids already applied, so replays are no-ops
 
 
 class Event(Strict):
