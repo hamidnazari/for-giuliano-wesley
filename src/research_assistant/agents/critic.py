@@ -69,6 +69,8 @@ class LLMCritic:
     def review(self, card: Card, round_number: int) -> Verdict:
         first_new = card.verified_notes  # earlier survivors were already judged supported
         new_notes = list(enumerate(card.notes, start=1))[first_new:]
+        if not new_notes:
+            return self._nothing_new(card)
         cited = sorted({sid for _, n in new_notes for sid in n.source_ids})
         passages = self._fetch(cited)
         mechanical: dict[int, list[str]] = {}  # note index -> problems found without the model
@@ -124,6 +126,27 @@ class LLMCritic:
         )
         reply = self._model.structured([self._system, HumanMessage(content=request)], CriticReply)
         return self._rule(card, reply, mechanical, round_number)
+
+    def _nothing_new(self, card: Card) -> Verdict:
+        """Every note passed an earlier round, so there is nothing for the model to judge."""
+        self._audit.record("critic", "nothing_new_to_judge", {"card": card.id})
+        if not card.notes:
+            return Verdict(
+                card_id=card.id,
+                kind=VerdictKind.REJECT,
+                rubric_version=self._rubric_version,
+                objections=["the card has no notes left"],
+            )
+        checks = [
+            CitationCheck(source_id=sid, supported=True)
+            for sid in sorted({s for n in card.notes for s in n.source_ids})
+        ]
+        return Verdict(
+            card_id=card.id,
+            kind=VerdictKind.APPROVE,
+            rubric_version=self._rubric_version,
+            citation_checks=checks,
+        )
 
     def _fetch(self, source_ids: list[str]) -> dict[str, dict[str, Any] | None]:
         def one(sid: str) -> dict[str, Any] | None:

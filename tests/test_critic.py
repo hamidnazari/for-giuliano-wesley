@@ -431,3 +431,12 @@ def test_scripted_flow_revise_then_approve_keeps_good_notes(tmp_path: Path) -> N
     # The overstated claim came back unchanged and was filtered; the corrected one was added.
     assert [n.text for n in card.notes] == ["Good claim.", "Corrected claim."]
     assert card.dropped == ["Overstated claim. (partial: r2)"] and card.attempts == 2
+
+
+def test_nothing_new_to_judge_approves_without_asking_the_model(tmp_path: Path) -> None:
+    c, card, fake, backend, budget, audit = make(tmp_path, [N1, N2], [])  # no model replies at all
+    verified = card.model_copy(update={"verified_notes": 2})
+    v = c.review(verified, 3)
+    assert v.kind is VerdictKind.APPROVE and fake.seen == [] and backend.calls == []
+    assert budget.fetches == 0 and "nothing_new_to_judge" in types(audit)
+    assert all(x.supported for x in v.citation_checks)
