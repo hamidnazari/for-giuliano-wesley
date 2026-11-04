@@ -2,12 +2,11 @@ import argparse
 import sys
 from pathlib import Path
 
-from research_assistant.agents.protocols import Agents
-from research_assistant.agents.stubs import StubCritic, StubPlanner, StubResearcher, StubWriter
+from research_assistant.agents.build import REAL_AGENTS, agents_builder
+from research_assistant.agents.factory import MissingCredential
 from research_assistant.board.render import render_board
 from research_assistant.board.sink import load_snapshot
 from research_assistant.graph.run import run_research
-from research_assistant.guardrails.budget import Budget
 from research_assistant.interaction import AutoApproveIO, ConsoleIO
 from research_assistant.settings import ConfigError, load_settings
 
@@ -28,20 +27,27 @@ def _run(args: argparse.Namespace) -> int:
     except ConfigError as e:
         print(e, file=sys.stderr)
         return 1
-    print("note: using stub agents; real agents are not built yet", file=sys.stderr)
+    stubs = sorted({"planner", "researcher", "critic", "writer"} - set(args.real))
+    print(f"note: stub agents in use: {', '.join(stubs)}", file=sys.stderr)
+    try:
+        make_agents = agents_builder(settings, args.config / "prompts", args.real)
+    except ValueError as e:
+        print(e, file=sys.stderr)
+        return 1
 
-    def make_agents(budget: Budget) -> Agents:
-        return Agents(StubPlanner(), StubResearcher(budget), StubCritic(), StubWriter())
-
-    result = run_research(
-        args.question,
-        settings,
-        args.data,
-        AutoApproveIO() if args.auto_approve else ConsoleIO(),
-        make_agents,
-        kanzo=args.kanzo,
-        kanzo_home=args.kanzo_home,
-    )
+    try:
+        result = run_research(
+            args.question,
+            settings,
+            args.data,
+            AutoApproveIO() if args.auto_approve else ConsoleIO(),
+            make_agents,
+            kanzo=args.kanzo,
+            kanzo_home=args.kanzo_home,
+        )
+    except MissingCredential as e:
+        print(f"{e}. Put it in .env and run through mise (mise exec -- ...).", file=sys.stderr)
+        return 1
     print(render_board(result.board))
     print(f"\nrun {result.run_id}: {result.status}")
     if result.stop_reason:
@@ -75,6 +81,14 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--config", type=Path, default=Path("config"))
     run.add_argument("--data", type=Path, default=Path("data"))
     run.add_argument("--auto-approve", action="store_true", help="skip the plan approval prompt")
+    run.add_argument(
+        "--real",
+        action="append",
+        default=[],
+        choices=REAL_AGENTS,
+        metavar="AGENT",
+        help="run this agent on a real model (repeatable); the rest stay stubs",
+    )
     run.add_argument("--kanzo", action="store_true", help="mirror the board into Kanzo")
     run.add_argument("--kanzo-home", type=Path, default=None, help="Kanzo data folder")
     board = sub.add_parser("board", help="print a run's board (latest run by default)")

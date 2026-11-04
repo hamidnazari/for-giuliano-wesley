@@ -9,6 +9,7 @@ from typing import Any, Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict
 
+from research_assistant.agents.factory import MissingCredential
 from research_assistant.guardrails.budget import Budget
 from research_assistant.settings import SearchConfig
 
@@ -113,7 +114,7 @@ def make_backend(
     env = os.environ if env is None else env
     key = env.get("TAVILY_API_KEY")
     if not key:
-        raise RuntimeError("TAVILY_API_KEY is not set")
+        raise MissingCredential("TAVILY_API_KEY is not set")
     from tavily import TavilyClient  # pyright: ignore[reportMissingTypeStubs]
 
     live = TavilyBackend(cast(_TavilyLike, TavilyClient(api_key=key)))  # untyped library

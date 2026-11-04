@@ -14,7 +14,14 @@ A command-line tool where a team of AI agents researches a question and delivers
     uv run research-assistant --help
     uv run research-assistant check-config
 
-Commands `index`, `run` and `board` are added as they are built.
+API keys in `.env` are loaded by mise, so run commands from the project directory in a
+mise-activated shell, or prefix them with `mise exec --`.
+
+    uv run research-assistant run "your question" --auto-approve
+    uv run research-assistant run "your question" --real planner   # planner on a real model
+    uv run research-assistant board
+
+Agents without a real implementation yet run as stubs. `index` is added as it is built.
 
 ## Checks
 

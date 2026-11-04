@@ -35,7 +35,7 @@ def go(
     io: ScriptedIO | AutoApproveIO | None = None,
     **kw: object,
 ) -> RunResult:
-    def make(budget: Budget) -> Agents:
+    def make(budget: Budget, audit: AuditLog) -> Agents:
         return Agents(
             StubPlanner(sub_questions), StubResearcher(budget), StubCritic(script), StubWriter()
         )

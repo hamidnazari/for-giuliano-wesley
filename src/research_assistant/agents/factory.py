@@ -24,8 +24,20 @@ _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
 Prices = Mapping[str, tuple[float, float]]
 
 
+class MissingCredential(RuntimeError):
+    """A required API key is not set in the environment."""
+
+
 class MalformedOutput(Exception):
     """The model kept returning output that does not match the schema."""
+
+
+def json_instruction(schema: type[BaseModel]) -> str:
+    """Tell a model to answer with JSON for this schema and nothing else."""
+    return (
+        "Reply with JSON only, no prose and no code fences, matching this JSON schema:\n"
+        + json.dumps(schema.model_json_schema())
+    )
 
 
 def scripted(responses: Sequence[str]) -> BaseChatModel:
@@ -148,7 +160,7 @@ class ModelFactory:
         else:
             key = self._env.get("KILO_API_KEY")
             if not key:
-                raise RuntimeError("KILO_API_KEY is not set")
+                raise MissingCredential("KILO_API_KEY is not set")
             # Our own retry and timeout wrap every call, so the client does not retry.
             model = ChatOpenAI(
                 model=spec.model,

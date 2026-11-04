@@ -7,6 +7,11 @@ from research_assistant.models import Plan
 
 
 class UserIO(Protocol):
+    @property
+    def interactive(self) -> bool:
+        """False when nobody can answer questions, so agents should not ask any."""
+        ...
+
     def ask(self, question: str) -> str: ...
 
     def approve_plan(self, plan: Plan) -> bool: ...
@@ -20,6 +25,8 @@ def format_plan(plan: Plan) -> str:
 
 class ConsoleIO:
     """Interactive. Closing stdin or pressing Ctrl-C at a gate declines; the run exits cleanly."""
+
+    interactive = True
 
     def ask(self, question: str) -> str:
         try:
@@ -41,6 +48,8 @@ class ConsoleIO:
 class AutoApproveIO:
     """Non-interactive, for CI and evals: no clarifying answers, plan always approved."""
 
+    interactive = False
+
     def ask(self, question: str) -> str:
         return ""
 
@@ -51,7 +60,10 @@ class AutoApproveIO:
 class ScriptedIO:
     """Answers from lists, for tests."""
 
-    def __init__(self, answers: Sequence[str] = (), approve: bool = True) -> None:
+    def __init__(
+        self, answers: Sequence[str] = (), approve: bool = True, interactive: bool = True
+    ) -> None:
+        self.interactive = interactive
         self._answers = list(answers)
         self._approve = approve
         self.asked: list[str] = []

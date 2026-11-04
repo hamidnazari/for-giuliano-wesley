@@ -1,6 +1,7 @@
 # pyright: reportUnknownMemberType=false, reportUnknownVariableType=false
 """One research run, start to finish: wiring, execution, and clean stops."""
 
+from collections.abc import Callable
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,14 +40,14 @@ def run_research(
     settings: Settings,
     data_root: Path,
     io: UserIO,
-    make_agents: Any,
+    make_agents: Callable[[Budget, AuditLog], Agents],
     *,
     kanzo: bool = False,
     kanzo_home: Path | None = None,
     budget: Budget | None = None,
     recursion_limit: int | None = None,
 ) -> RunResult:
-    """Run the workflow. make_agents(budget) returns the Agents to use.
+    """Run the workflow. make_agents(budget, audit) returns the Agents to use.
 
     A tripped cap or step limit ends the run cleanly: the partial board is saved and the
     report notes the gaps. Rerunning starts fresh.
@@ -57,7 +58,7 @@ def run_research(
     budget = budget or Budget(settings.guardrails)
     registry = ToolRegistry(settings, audit)
     registry.register(Tool("render_report", make_render_report(pdir), allow_urls=True))
-    agents: Agents = make_agents(budget)
+    agents = make_agents(budget, audit)
     guard = settings.guardrails
     limit = recursion_limit or 20 + 8 * (guard.max_critic_rounds + guard.max_card_attempts)
 

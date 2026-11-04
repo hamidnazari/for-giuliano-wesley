@@ -8,6 +8,7 @@ planner:
   model: anthropic/claude-sonnet-4.6
   prompt: planner.md
   tools: []
+  limits: {clarifying_questions: 3}
 
 researcher:
   model: anthropic/claude-haiku-4.5
