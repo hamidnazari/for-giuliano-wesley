@@ -73,6 +73,7 @@ class GuardrailsConfig(Strict):
     max_llm_calls: int = Field(gt=0)
     max_tokens: int = Field(gt=0)
     max_searches: int = Field(gt=0)
+    max_page_fetches: int = Field(default=100, gt=0)  # full-page fetches by the Critic
     max_wall_clock_seconds: int = Field(gt=0)
     max_critic_rounds: int = Field(gt=0)
     max_card_attempts: int = Field(gt=0)

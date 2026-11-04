@@ -21,6 +21,14 @@ CONFIG = Path(__file__).parent.parent / "config"
 
 
 class StubTavily:
+    pages: dict[str, str] = {"https://a.example/1": "Full page text about vectors."}
+
+    def extract(self, urls: list[str], **kwargs: Any) -> dict[str, Any]:
+        return {
+            "results": [{"url": u, "raw_content": self.pages[u]} for u in urls if u in self.pages],
+            "failed_results": [{"url": u} for u in urls if u not in self.pages],
+        }
+
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
@@ -112,3 +120,16 @@ def test_web_search_through_registry_for_researcher_only(tmp_path: Path) -> None
         reg.register(Tool(name, fn if name == "web_search" else noop))
     out = reg.for_agent("researcher").call("web_search", query="q")
     assert out[0]["url"] == "https://a.example"
+
+
+def test_extract_through_tavily_record_and_replay(tmp_path: Path) -> None:
+    cassette = tmp_path / "s.json"
+    rec = RecordingBackend(TavilyBackend(StubTavily()), cassette)
+    assert rec.extract("https://a.example/1") == "Full page text about vectors."
+    assert rec.extract("https://nope.example") == ""  # unreadable page: empty, not an error
+    rec.search("q", "basic", 5)  # recording a search keeps the recorded pages
+    replay = ReplayBackend(cassette)
+    assert replay.extract("https://a.example/1") == "Full page text about vectors."
+    assert len(replay.search("q", "basic", 5)) == 2
+    with pytest.raises(ReplayMiss):
+        replay.extract("https://never-recorded.example")

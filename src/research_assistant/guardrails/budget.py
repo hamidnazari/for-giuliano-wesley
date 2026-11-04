@@ -41,6 +41,7 @@ class Budget:
         self._start = clock()
         self._lock = threading.Lock()
         self.searches = 0
+        self.fetches = 0
         self.usage: dict[str, AgentUsage] = defaultdict(AgentUsage)
         self._attempts: dict[str, int] = defaultdict(int)
         self._rounds: dict[str, int] = defaultdict(int)
@@ -88,6 +89,13 @@ class Budget:
             if self.searches + 1 > self._caps.max_searches:
                 raise BudgetExceeded("searches", self.searches + 1, self._caps.max_searches)
             self.searches += 1
+
+    def before_fetch(self) -> None:
+        self.check_wall_clock()
+        with self._lock:
+            if self.fetches + 1 > self._caps.max_page_fetches:
+                raise BudgetExceeded("page_fetches", self.fetches + 1, self._caps.max_page_fetches)
+            self.fetches += 1
 
     # per-card
     def start_attempt(self, card_id: str) -> int:

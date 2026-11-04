@@ -31,12 +31,24 @@ class SearchBackend(Protocol):
     def search(self, query: str, depth: str, max_results: int) -> list[SearchResult]: ...
 
 
+class ExtractBackend(Protocol):
+    def extract(self, url: str) -> str:
+        """Return the page's text, or an empty string when it cannot be read."""
+        ...
+
+
+class WebBackend(SearchBackend, ExtractBackend, Protocol):
+    pass
+
+
 class ReplayMiss(Exception):
     """Replay mode saw a query that is not in the cassette."""
 
 
 class _TavilyLike(Protocol):
     def search(self, query: str, **kwargs: Any) -> dict[str, Any]: ...
+
+    def extract(self, urls: list[str], **kwargs: Any) -> dict[str, Any]: ...
 
 
 class TavilyBackend:
@@ -58,6 +70,14 @@ class TavilyBackend:
             for r in raw.get("results", [])
         ]
 
+    def extract(self, url: str) -> str:
+        try:
+            raw = self._client.extract(urls=[url], extract_depth="basic", format="text")
+        except requests.RequestException as e:
+            raise RetryableError(repr(e)) from e
+        results = raw.get("results", [])
+        return str(results[0].get("raw_content") or "") if results else ""
+
 
 def _key(query: str, depth: str, max_results: int) -> str:
     return f"{depth}|{max_results}|{' '.join(query.lower().split())}"
@@ -76,7 +96,9 @@ class ReplayBackend:
     """Serves recorded results only. Never touches the network."""
 
     def __init__(self, cassette: Path) -> None:
-        self._entries: dict[str, Any] = _read(cassette)["entries"]
+        data = _read(cassette)
+        self._entries: dict[str, Any] = data["entries"]
+        self._extracts: dict[str, str] = data.get("extracts", {})
 
     def search(self, query: str, depth: str, max_results: int) -> list[SearchResult]:
         key = _key(query, depth, max_results)
@@ -84,11 +106,16 @@ class ReplayBackend:
             raise ReplayMiss(f"no recorded search for: {key}")
         return [SearchResult.model_validate(r) for r in self._entries[key]]
 
+    def extract(self, url: str) -> str:
+        if url not in self._extracts:
+            raise ReplayMiss(f"no recorded page for: {url}")
+        return self._extracts[url]
+
 
 class RecordingBackend:
     """Calls a real backend and saves each response to the cassette."""
 
-    def __init__(self, inner: SearchBackend, cassette: Path) -> None:
+    def __init__(self, inner: WebBackend, cassette: Path) -> None:
         self._inner = inner
         self._path = cassette
         self._lock = threading.Lock()
@@ -98,11 +125,22 @@ class RecordingBackend:
         with self._lock:
             data = _read(self._path)
             data["entries"][_key(query, depth, max_results)] = [r.model_dump() for r in results]
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self._path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
-            tmp.replace(self._path)
+            self._write(data)
         return results
+
+    def _write(self, data: dict[str, Any]) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self._path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+        tmp.replace(self._path)
+
+    def extract(self, url: str) -> str:
+        text = self._inner.extract(url)
+        with self._lock:
+            data = _read(self._path)
+            data.setdefault("extracts", {})[url] = text
+            self._write(data)
+        return text
 
 
 Mode = Literal["live", "record", "replay"]
@@ -110,7 +148,7 @@ Mode = Literal["live", "record", "replay"]
 
 def make_backend(
     mode: Mode, cassette: Path | None = None, env: Mapping[str, str] | None = None
-) -> SearchBackend:
+) -> WebBackend:
     if mode != "live" and cassette is None:
         raise ValueError(f"{mode} mode needs a cassette path")
     if mode == "replay":
