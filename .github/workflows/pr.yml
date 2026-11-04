@@ -19,3 +19,49 @@ jobs:
       - run: uv sync --locked
       - run: mise run check
       - run: mise run secrets:history
+
+  evals:
+    # Live-model evals. They need the KILO_API_KEY repository secret, which pull requests from
+    # forks cannot read, so they run only for branches in this repository.
+    needs: checks
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    concurrency:
+      group: evals-${{ github.ref }}
+      cancel-in-progress: true
+    env:
+      KILO_API_KEY: ${{ secrets.KILO_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - run: uv sync --locked
+      - name: Evals
+        run: |
+          if [ -z "$KILO_API_KEY" ]; then
+            echo "::error::KILO_API_KEY is not set as a repository secret, so the evals cannot run"
+            exit 1
+          fi
+          mkdir -p eval-results
+          status=0
+          for suite in critic injection golden; do
+            set +e
+            uv run research-assistant eval "$suite" --out "eval-results/$suite.json" 2>&1 | tee "eval-results/$suite.txt"
+            [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
+            set -e
+          done
+          {
+            echo "## Eval results"
+            for f in eval-results/*.txt; do
+              echo "### $(basename "$f" .txt)"
+              echo '```'
+              cat "$f"
+              echo '```'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-results
+          path: eval-results/
+          if-no-files-found: ignore
