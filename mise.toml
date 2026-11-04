@@ -1,3 +1,6 @@
+[env]
+_.file = { path = ".env", redact = true }
+
 [tools]
 "github:emanuele-em/kanzo" = "0.3.0"
 gitleaks = "8.30.1"
