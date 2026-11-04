@@ -59,7 +59,11 @@ def run_research(
     audit = AuditLog(pdir / "audit.jsonl", run_id)
     budget = budget or Budget(settings.guardrails)
     registry = ToolRegistry(settings, audit)
-    registry.register(Tool("render_report", make_render_report(pdir), allow_urls=True))
+
+    def pdf_failed(reason: str) -> None:
+        audit.record("writer", "pdf_failed", {"reason": reason})
+
+    registry.register(Tool("render_report", make_render_report(pdir, pdf_failed), allow_urls=True))
     agents = make_agents(AgentEnv(budget, audit, registry, SourceStore()))
     guard = settings.guardrails
     limit = recursion_limit or 20 + 8 * (guard.max_critic_rounds + guard.max_card_attempts)

@@ -196,6 +196,10 @@ def _run(args: argparse.Namespace) -> int:
         print(f"stopped early: {result.stop_reason}")
     if result.report_path:
         print(f"report: {result.report_path}")
+        pdf = Path(result.report_path).with_suffix(".pdf")
+        print(
+            f"pdf: {pdf}" if pdf.exists() else "pdf: not produced (see pdf_failed in audit.jsonl)"
+        )
     return 2 if result.status == "stopped" else 0
 
 
