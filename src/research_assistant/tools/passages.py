@@ -107,7 +107,9 @@ def missing_numbers(note: str, texts: list[str]) -> list[str]:
     seen: list[str] = []
     for raw in _NUMBER.findall(note):
         num = raw.rstrip(",").replace(",", "")
-        if num not in haystack and num not in seen:
+        # whole numbers only: 5 must not match inside 50, 5.5 or 2.5
+        found = re.search(rf"(?<![\d.]){re.escape(num)}(?!\d|\.\d)", haystack)
+        if not found and num not in seen:
             seen.append(num)
     return seen
 

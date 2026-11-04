@@ -113,7 +113,7 @@ def test_real_planner_inside_the_graph(tmp_path: Path) -> None:
 
 def test_unknown_real_agent_rejected(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="no real implementation"):
-        agents_builder(load_settings(CONFIG), CONFIG / "prompts", real=["critic"])
+        agents_builder(load_settings(CONFIG), CONFIG / "prompts", real=["reflector"])
 
 
 def test_cli_real_planner_needs_an_api_key(

@@ -98,9 +98,13 @@ class Verdict(Strict):
     objections: list[str] = Field(default_factory=list)
     citation_checks: list[CitationCheck] = []
     split_into: list[str] = Field(default_factory=list)  # child sub-questions
+    source_ratings: dict[str, float] = {}  # the Critic's own credibility rating per source
 
     @model_validator(mode="after")
     def _check(self) -> Self:
+        for sid, score in self.source_ratings.items():
+            if not 0 <= score <= 1:
+                raise ValueError(f"rating for {sid} must be within 0..1")
         if self.kind is VerdictKind.SPLIT and not self.split_into:
             raise ValueError("a split verdict needs child sub-questions")
         if self.kind is not VerdictKind.SPLIT and self.split_into:

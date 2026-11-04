@@ -108,6 +108,8 @@ def test_numbers_are_checked_loosely() -> None:
     page = "Sufficient up to 5,000,000 vectors; latency 150 ms; cost $50/month and 75% less."
     assert missing_numbers("Up to 5000000 vectors at 150 ms.", [page]) == []
     assert missing_numbers("It is 42% faster and costs $50.", [page]) == ["42"]
+    assert missing_numbers("Latency of 50 ms.", ["latency was 150 ms"]) == ["50"]  # not inside 150
+    assert missing_numbers("About 5 vectors.", ["It has 5.5 vectors."]) == ["5"]
 
 
 def test_best_windows_pick_the_relevant_stretch() -> None:

@@ -65,7 +65,7 @@ def _run(args: argparse.Namespace) -> int:
     print(f"note: stub agents in use: {', '.join(stubs)}", file=sys.stderr)
     try:
         backend = None
-        if "researcher" in args.real:
+        if "researcher" in args.real or "critic" in args.real:
             cassette = args.cassette or args.data / "search_cassette.json"
             backend = make_backend(args.search, cassette)
         docs_index = None
@@ -80,6 +80,7 @@ def _run(args: argparse.Namespace) -> int:
             args.real,
             search_backend=backend,
             docs_index=docs_index,
+            page_backend=backend,
         )
     except MissingCredential as e:
         print(f"{e}. Put it in .env and run through mise (mise exec -- ...).", file=sys.stderr)

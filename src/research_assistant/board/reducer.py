@@ -103,12 +103,21 @@ def _review(board: Board, op: Review, cap: int | None) -> None:
         raise BoardError(f"verdict is for {v.card_id}, op is for {op.card_id}")
     c = _get(board, op.card_id)
     feedback = [*c.critic_feedback, *v.objections]
+    known = {s.source_id for s in c.sources}
+    # The Critic's own ratings replace the Researcher's for the sources it rated.
+    credibility = {**c.credibility, **{k: r for k, r in v.source_ratings.items() if k in known}}
     match v.kind:
         case VerdictKind.APPROVE:
-            board.cards[c.id] = _update(c, S.DONE, critic_feedback=feedback)
+            board.cards[c.id] = _update(
+                c, S.DONE, critic_feedback=feedback, credibility=credibility
+            )
         case VerdictKind.REVISE:
             board.cards[c.id] = _update(
-                c, S.IN_PROGRESS, critic_feedback=feedback, attempts=c.attempts + 1
+                c,
+                S.IN_PROGRESS,
+                critic_feedback=feedback,
+                credibility=credibility,
+                attempts=c.attempts + 1,
             )
         case VerdictKind.REJECT:
             board.cards[c.id] = _update(
