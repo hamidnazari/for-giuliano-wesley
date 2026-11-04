@@ -18,6 +18,8 @@ from research_assistant.guardrails.budget import Budget, BudgetExceeded, CardLim
 from research_assistant.interaction import UserIO
 from research_assistant.models import Board, Card, CardStatus, Plan, Verdict, VerdictKind
 from research_assistant.observability.audit import AuditLog
+from research_assistant.report_lint import lint_report
+from research_assistant.reporting import plain_report
 from research_assistant.settings import Settings
 from research_assistant.tools.registry import Toolbox
 
@@ -37,6 +39,10 @@ class RunContext:
 def write_report(ctx: RunContext, board: Board, question: str, stop_reason: str | None) -> str:
     """Ask the Writer for markdown and save it with the render_report tool."""
     markdown = ctx.agents.writer.write(board, question, stop_reason)
+    issues = lint_report(markdown, board)
+    if issues:  # whatever wrote it, the report on disk must pass lint
+        ctx.audit.record("writer", "report_lint_failed", {"problems": issues})
+        markdown = plain_report(board, question, stop_reason)
     path = ctx.writer_tools.call("render_report", markdown=markdown)
     ctx.audit.record("writer", "report_written", {"path": path, "partial": bool(stop_reason)})
     return str(path)

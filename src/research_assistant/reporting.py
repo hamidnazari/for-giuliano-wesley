@@ -38,11 +38,21 @@ def plain_report(board: Board, question: str, stop_reason: str | None) -> str:
         lines += [f"## {card.sub_question}", ""]
         lines += [f"- {n.text} [{', '.join(n.source_ids)}]" for n in card.notes]
         lines.append("")
-    gaps = limitations(board)
-    if gaps:
-        lines += ["## Limitations", ""] + [f"- {g}" for g in gaps] + [""]
-    lines += ["## Sources", ""]
-    for card in cards:
-        for s in card.sources:
-            lines.append(f"- [{s.source_id}] {s.title or s.locator}: {s.locator}")
-    return "\n".join(lines) + "\n"
+    lines += limitations_section(board)
+    lines += sources_section(board)
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def sources_section(board: Board) -> list[str]:
+    """The Sources section for approved cards, or nothing when there are none."""
+    entries = [
+        f"- [{s.source_id}] {s.title or s.locator}: {s.locator}"
+        for card in done_cards(board)
+        for s in card.sources
+    ]
+    return ["## Sources", "", *entries, ""] if entries else []
+
+
+def limitations_section(board: Board, extra: list[str] | None = None) -> list[str]:
+    gaps = [*limitations(board), *(extra or [])]
+    return ["## Limitations", "", *[f"- {g}" for g in gaps], ""] if gaps else []
