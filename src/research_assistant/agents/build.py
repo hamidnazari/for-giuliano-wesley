@@ -2,18 +2,25 @@
 
 from collections.abc import Callable, Collection, Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
+from research_assistant.agents.env import AgentEnv
 from research_assistant.agents.factory import ModelFactory
 from research_assistant.agents.planner import LLMPlanner
 from research_assistant.agents.prompts import read_prompt
-from research_assistant.agents.protocols import Agents, Writer
+from research_assistant.agents.protocols import Agents, Researcher, Writer
+from research_assistant.agents.researcher import LLMResearcher
 from research_assistant.agents.stubs import StubCritic, StubPlanner, StubResearcher, StubWriter
 from research_assistant.agents.writer import LLMWriter, ReportChecker
-from research_assistant.guardrails.budget import Budget
-from research_assistant.observability.audit import AuditLog
 from research_assistant.settings import Settings
+from research_assistant.tools.registry import Tool
+from research_assistant.tools.search import SearchBackend, make_web_search
 
-REAL_AGENTS = ("planner", "writer")  # grows as real agents are built
+REAL_AGENTS = ("planner", "researcher", "writer")  # grows as real agents are built
+
+
+def _no_documents(**_: Any) -> list[Any]:
+    return []
 
 
 def agents_builder(
@@ -21,13 +28,17 @@ def agents_builder(
     prompts_dir: Path,
     real: Collection[str] = (),
     scripts: Mapping[str, Sequence[str]] | None = None,
-) -> Callable[[Budget, AuditLog], Agents]:
-    """Return make_agents(budget, audit). scripts feed fake models in tests."""
+    search_backend: SearchBackend | None = None,
+) -> Callable[[AgentEnv], Agents]:
+    """Return make_agents(env). scripts feed fake models in tests."""
     unknown = set(real) - set(REAL_AGENTS)
     if unknown:
         raise ValueError(f"no real implementation yet for: {sorted(unknown)}")
+    if "researcher" in real and search_backend is None:
+        raise ValueError("the real researcher needs a search backend")
 
-    def make(budget: Budget, audit: AuditLog) -> Agents:
+    def make(env: AgentEnv) -> Agents:
+        budget, audit = env.budget, env.audit
         models = ModelFactory(settings, budget, audit, scripts)
         planner: StubPlanner | LLMPlanner = StubPlanner()
         if "planner" in real:
@@ -37,6 +48,22 @@ def agents_builder(
                 read_prompt(prompts_dir, spec.prompt),
                 settings.guardrails.max_sub_questions,
                 spec.limits.get("clarifying_questions", 3),
+            )
+        researcher: Researcher = StubResearcher(budget)
+        if "researcher" in real:
+            assert search_backend is not None
+            spec = settings.agents.researcher
+            env.registry.register(
+                Tool("web_search", make_web_search(search_backend, budget, settings.tools.search))
+            )
+            env.registry.register(Tool("docs_retrieve", _no_documents))  # until the index exists
+            researcher = LLMResearcher(
+                models.build("researcher"),
+                read_prompt(prompts_dir, spec.prompt),
+                env.registry.for_agent("researcher"),
+                env.sources,
+                audit,
+                spec.limits.get("searches", 6),
             )
         writer: Writer = StubWriter()
         if "writer" in real:
@@ -52,6 +79,6 @@ def agents_builder(
                 audit,
                 spec.limits.get("repairs", 2),
             )
-        return Agents(planner, StubResearcher(budget), StubCritic(), writer)
+        return Agents(planner, researcher, StubCritic(), writer)
 
     return make

@@ -43,6 +43,9 @@ def write_report(ctx: RunContext, board: Board, question: str, stop_reason: str 
     if issues:  # whatever wrote it, the report on disk must pass lint
         ctx.audit.record("writer", "report_lint_failed", {"problems": issues})
         markdown = plain_report(board, question, stop_reason)
+        left = lint_report(markdown, board)
+        if left:  # the fallback itself is broken: write it anyway, but make it visible
+            ctx.audit.record("writer", "fallback_lint_failed", {"problems": left})
     path = ctx.writer_tools.call("render_report", markdown=markdown)
     ctx.audit.record("writer", "report_written", {"path": path, "partial": bool(stop_reason)})
     return str(path)

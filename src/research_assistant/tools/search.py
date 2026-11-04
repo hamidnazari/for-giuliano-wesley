@@ -7,10 +7,12 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 
+import requests
 from pydantic import BaseModel, ConfigDict
 
 from research_assistant.agents.factory import MissingCredential
 from research_assistant.guardrails.budget import Budget
+from research_assistant.reliability.retry import RetryableError
 from research_assistant.settings import SearchConfig
 
 CASSETTE_VERSION = 1
@@ -42,7 +44,10 @@ class TavilyBackend:
         self._client = client
 
     def search(self, query: str, depth: str, max_results: int) -> list[SearchResult]:
-        raw = self._client.search(query, search_depth=depth, max_results=max_results)
+        try:
+            raw = self._client.search(query, search_depth=depth, max_results=max_results)
+        except requests.RequestException as e:  # network trouble is worth retrying
+            raise RetryableError(repr(e)) from e
         return [
             SearchResult(
                 url=r["url"],

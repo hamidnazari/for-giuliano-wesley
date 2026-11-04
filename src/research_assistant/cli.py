@@ -9,6 +9,7 @@ from research_assistant.board.sink import load_snapshot
 from research_assistant.graph.run import run_research
 from research_assistant.interaction import AutoApproveIO, ConsoleIO
 from research_assistant.settings import ConfigError, load_settings
+from research_assistant.tools.search import make_backend
 
 
 def _check_config(config_dir: Path) -> int:
@@ -30,7 +31,16 @@ def _run(args: argparse.Namespace) -> int:
     stubs = sorted({"planner", "researcher", "critic", "writer"} - set(args.real))
     print(f"note: stub agents in use: {', '.join(stubs)}", file=sys.stderr)
     try:
-        make_agents = agents_builder(settings, args.config / "prompts", args.real)
+        backend = None
+        if "researcher" in args.real:
+            cassette = args.cassette or args.data / "search_cassette.json"
+            backend = make_backend(args.search, cassette)
+        make_agents = agents_builder(
+            settings, args.config / "prompts", args.real, search_backend=backend
+        )
+    except MissingCredential as e:
+        print(f"{e}. Put it in .env and run through mise (mise exec -- ...).", file=sys.stderr)
+        return 1
     except ValueError as e:
         print(e, file=sys.stderr)
         return 1
@@ -89,6 +99,13 @@ def main(argv: list[str] | None = None) -> int:
         metavar="AGENT",
         help="run this agent on a real model (repeatable); the rest stay stubs",
     )
+    run.add_argument(
+        "--search",
+        choices=["live", "record", "replay"],
+        default="live",
+        help="web search mode; record and replay use a cassette file",
+    )
+    run.add_argument("--cassette", type=Path, default=None, help="search cassette (JSON)")
     run.add_argument("--kanzo", action="store_true", help="mirror the board into Kanzo")
     run.add_argument("--kanzo-home", type=Path, default=None, help="Kanzo data folder")
     board = sub.add_parser("board", help="print a run's board (latest run by default)")

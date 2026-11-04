@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from langgraph.errors import GraphRecursionError
 
+from research_assistant.agents.env import AgentEnv
 from research_assistant.agents.protocols import Agents
 from research_assistant.board.kanzo import KanzoSink, SafeSink
 from research_assistant.board.sink import BoardSink, JsonSnapshotSink
@@ -19,6 +20,7 @@ from research_assistant.models import Board
 from research_assistant.observability.audit import AuditLog
 from research_assistant.observability.run import new_run_id, project_dir
 from research_assistant.settings import Settings
+from research_assistant.sources import SourceStore
 from research_assistant.tools.registry import Tool, ToolRegistry
 from research_assistant.tools.render import make_render_report
 
@@ -40,14 +42,14 @@ def run_research(
     settings: Settings,
     data_root: Path,
     io: UserIO,
-    make_agents: Callable[[Budget, AuditLog], Agents],
+    make_agents: Callable[[AgentEnv], Agents],
     *,
     kanzo: bool = False,
     kanzo_home: Path | None = None,
     budget: Budget | None = None,
     recursion_limit: int | None = None,
 ) -> RunResult:
-    """Run the workflow. make_agents(budget, audit) returns the Agents to use.
+    """Run the workflow. make_agents(env) returns the Agents to use.
 
     A tripped cap or step limit ends the run cleanly: the partial board is saved and the
     report notes the gaps. Rerunning starts fresh.
@@ -58,7 +60,7 @@ def run_research(
     budget = budget or Budget(settings.guardrails)
     registry = ToolRegistry(settings, audit)
     registry.register(Tool("render_report", make_render_report(pdir), allow_urls=True))
-    agents = make_agents(budget, audit)
+    agents = make_agents(AgentEnv(budget, audit, registry, SourceStore()))
     guard = settings.guardrails
     limit = recursion_limit or 20 + 8 * (guard.max_critic_rounds + guard.max_card_attempts)
 

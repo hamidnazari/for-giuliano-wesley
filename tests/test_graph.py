@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from research_assistant.agents.env import AgentEnv
 from research_assistant.agents.protocols import Agents
 from research_assistant.agents.stubs import (
     StubCritic,
@@ -12,7 +13,6 @@ from research_assistant.agents.stubs import (
 )
 from research_assistant.cli import main
 from research_assistant.graph.run import RunResult, run_research
-from research_assistant.guardrails.budget import Budget
 from research_assistant.interaction import AutoApproveIO, ScriptedIO
 from research_assistant.models import CardStatus, VerdictKind
 from research_assistant.observability.audit import AuditLog
@@ -35,9 +35,9 @@ def go(
     io: ScriptedIO | AutoApproveIO | None = None,
     **kw: object,
 ) -> RunResult:
-    def make(budget: Budget, audit: AuditLog) -> Agents:
+    def make(env: AgentEnv) -> Agents:
         return Agents(
-            StubPlanner(sub_questions), StubResearcher(budget), StubCritic(script), StubWriter()
+            StubPlanner(sub_questions), StubResearcher(env.budget), StubCritic(script), StubWriter()
         )
 
     return run_research("What is X?", s or settings(), tmp_path, io or AutoApproveIO(), make, **kw)  # type: ignore[arg-type]

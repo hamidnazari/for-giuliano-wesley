@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from research_assistant.models import Board
 from research_assistant.reporting import done_cards
 
-CITE = re.compile(r"\[([A-Za-z0-9][\w.\-]*)\](?!\()")
+_ID = r"[A-Za-z0-9][\w.\-]*"
+# One marker may cite several sources: [c1-s1] or [c1-s1, c2-s3]. Not a link: [text](url).
+CITE = re.compile(rf"\[({_ID}(?:\s*,\s*{_ID})*)\](?!\()")
 URL = re.compile(r"https?://[^\s)>\]]+")
 EXEMPT_SECTIONS = {"limitations", "sources"}
 
@@ -50,7 +52,8 @@ def claims(markdown: str) -> list[Claim]:
             continue
         if section in EXEMPT_SECTIONS:
             continue
-        found.append(Claim(n, text, tuple(CITE.findall(text))))
+        ids = tuple(i.strip() for m in CITE.findall(text) for i in m.split(","))
+        found.append(Claim(n, text, ids))
     return found
 
 

@@ -8,6 +8,7 @@ from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 
 from research_assistant.agents.build import agents_builder
+from research_assistant.agents.env import AgentEnv
 from research_assistant.agents.factory import AgentModel
 from research_assistant.agents.protocols import Agents
 from research_assistant.agents.stubs import StubCritic, StubPlanner, StubResearcher
@@ -223,8 +224,8 @@ def test_workflow_guards_the_report_even_for_a_bad_writer(tmp_path: Path) -> Non
         def write(self, board: Board, question: str, stop_reason: str | None) -> str:
             return "# T\n\n## A\n\nUncited claim.\n"
 
-    def make(budget: Budget, audit: AuditLog) -> Agents:
-        return Agents(StubPlanner(), StubResearcher(budget), StubCritic(), BadWriter())
+    def make(env: AgentEnv) -> Agents:
+        return Agents(StubPlanner(), StubResearcher(env.budget), StubCritic(), BadWriter())
 
     r = run_research("Q?", load_settings(CONFIG), tmp_path, AutoApproveIO(), make)
     text = Path(r.report_path or "").read_text()
@@ -247,3 +248,20 @@ def test_real_writer_in_the_graph_with_scripted_models(tmp_path: Path) -> None:
     text = Path(r.report_path or "").read_text()
     assert r.status == "completed" and text.startswith("# Findings")
     assert "## Sources" in text and "https://example.com/c1" in text
+
+
+def test_multi_source_citations_lint_and_fallback_are_clean() -> None:
+    src2 = Source(source_id="c1-s2", kind="web", locator="https://a.example/2", title="Two")
+    c = done_card("c1", "Joint claim.", "https://a.example/1")
+    c = Card.model_validate(
+        {
+            **c.model_dump(),
+            "notes": [Note(text="Joint claim.", source_ids=["c1-s1", "c1-s2"])],
+            "sources": [*c.sources, src2],
+        }
+    )
+    b = Board(run_id="r1", cards={"c1": c})
+    assert lint_report("# T\n\n## A\n\nJoint claim. [c1-s1, c1-s2]\n", b) == []
+    assert lint_report(plain_report(b, "Q?", None), b) == []
+    issues = lint_report("# T\n\n## A\n\nJoint claim. [c1-s1, ghost]\n", b)
+    assert any("unknown source [ghost]" in i for i in issues)
