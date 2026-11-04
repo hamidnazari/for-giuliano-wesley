@@ -95,19 +95,38 @@ def _read(path: Path) -> dict[str, Any]:
 class ReplayBackend:
     """Serves recorded results only. Never touches the network."""
 
-    def __init__(self, cassette: Path) -> None:
+    def __init__(self, cassette: Path, nearest: bool = False) -> None:
+        """nearest=True answers an unrecorded query with the closest recorded one.
+
+        Evals use it: agents word queries differently each run, but the corpus stays frozen.
+        """
         data = _read(cassette)
         self._entries: dict[str, Any] = data["entries"]
         self._extracts: dict[str, str] = data.get("extracts", {})
+        self._nearest = nearest
 
     def search(self, query: str, depth: str, max_results: int) -> list[SearchResult]:
         key = _key(query, depth, max_results)
+        if key not in self._entries and self._nearest:
+            key = self._closest(query) or key
         if key not in self._entries:
             raise ReplayMiss(f"no recorded search for: {key}")
         return [SearchResult.model_validate(r) for r in self._entries[key]]
 
+    def _closest(self, query: str) -> str | None:
+        words = set(query.lower().split())
+        best, best_score = None, 0.0
+        for key in sorted(self._entries):  # sorted: ties resolve the same way every run
+            recorded = set(key.split("|", 2)[2].split())
+            score = len(words & recorded) / len(words | recorded) if words | recorded else 0.0
+            if score > best_score:
+                best, best_score = key, score
+        return best
+
     def extract(self, url: str) -> str:
         if url not in self._extracts:
+            if self._nearest:
+                return ""  # not in the frozen corpus: reads as an unreadable page
             raise ReplayMiss(f"no recorded page for: {url}")
         return self._extracts[url]
 

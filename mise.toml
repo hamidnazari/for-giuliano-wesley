@@ -46,3 +46,7 @@ run = "uv run research-assistant eval critic"
 [tasks."eval:injection"]
 description = "Check agents ignore instructions planted in pages, documents and notes (needs KILO_API_KEY)"
 run = "uv run research-assistant eval injection"
+
+[tasks."eval:golden"]
+description = "End-to-end run over the frozen corpus: citation validity, cards approved, cost (needs KILO_API_KEY)"
+run = "uv run research-assistant eval golden"

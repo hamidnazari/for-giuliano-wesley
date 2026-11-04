@@ -24,6 +24,14 @@ def clean_title(title: str, limit: int = 120) -> str:
 _OPEN = (CardStatus.BACKLOG, CardStatus.IN_PROGRESS, CardStatus.IN_REVIEW)
 
 
+_URL = re.compile(r"https?://\S+")
+
+
+def _no_urls(text: str) -> str:
+    """Gap text can carry URLs from error messages or quoted notes. Reports link only sources."""
+    return _URL.sub("a web page", text)
+
+
 def limitations(board: Board) -> list[str]:
     """Gaps the report must admit: failed or unfinished cards.
 
@@ -35,11 +43,15 @@ def limitations(board: Board) -> list[str]:
         if card.id in parents:
             continue
         if card.status in (CardStatus.BLOCKED, CardStatus.REJECTED):
-            gaps.append(f"{card.id}: {card.sub_question} ({card.status.value}: {card.reason})")
+            reason = _no_urls(card.reason)
+            gaps.append(f"{card.id}: {card.sub_question} ({card.status.value}: {reason})")
         elif card.status in _OPEN:
             gaps.append(f"{card.id}: {card.sub_question} (not completed)")
         if card.status is CardStatus.DONE:
-            gaps += [f"{card.id}: dropped after failing review: {line}" for line in card.dropped]
+            gaps += [
+                f"{card.id}: dropped after failing review: {_no_urls(line)}"
+                for line in card.dropped
+            ]
     return gaps
 
 

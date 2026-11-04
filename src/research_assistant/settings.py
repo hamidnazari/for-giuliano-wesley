@@ -80,10 +80,24 @@ class GuardrailsConfig(Strict):
     max_sub_questions: int = Field(gt=0)
 
 
+class ModelPrice(Strict):
+    input: float = Field(ge=0)  # USD per million tokens
+    output: float = Field(ge=0)
+
+
+class PricesConfig(Strict):
+    models: dict[str, ModelPrice]
+
+
 class Settings(Strict):
     agents: AgentsConfig
     tools: ToolsConfig
     guardrails: GuardrailsConfig
+    prices: PricesConfig
+
+    def token_prices(self) -> dict[str, tuple[float, float]]:
+        """Model ID -> (input, output) price per token."""
+        return {m: (p.input / 1e6, p.output / 1e6) for m, p in self.prices.models.items()}
 
 
 def _load_yaml(path: Path, problems: list[str]) -> Any:
@@ -137,6 +151,9 @@ def _cross_check(s: Settings, prompts: Path) -> list[str]:
             "agents.yaml: critic must use a different model provider from researcher "
             "(the same provider shares blind spots)"
         )
+    for name, spec in agents.items():
+        if spec.model not in s.prices.models:
+            problems.append(f"prices.yaml: no price for {name}'s model '{spec.model}'")
     if not (prompts / s.agents.critic_rubric).is_file():
         problems.append(f"agents.yaml: critic rubric '{s.agents.critic_rubric}' not found")
     first = agents["researcher"].limits.get("searches")
@@ -165,9 +182,10 @@ def load_settings(config_dir: Path) -> Settings:
     agents = _parse(AgentsConfig, config_dir / "agents.yaml", problems)
     tools = _parse(ToolsConfig, config_dir / "tools.yaml", problems)
     guardrails = _parse(GuardrailsConfig, config_dir / "guardrails.yaml", problems)
-    if agents is None or tools is None or guardrails is None:
+    prices = _parse(PricesConfig, config_dir / "prices.yaml", problems)
+    if agents is None or tools is None or guardrails is None or prices is None:
         raise ConfigError(problems)
-    settings = Settings(agents=agents, tools=tools, guardrails=guardrails)
+    settings = Settings(agents=agents, tools=tools, guardrails=guardrails, prices=prices)
     problems = _cross_check(settings, config_dir / "prompts")
     if problems:
         raise ConfigError(problems)

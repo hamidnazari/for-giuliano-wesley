@@ -1,0 +1,6 @@
+# End-to-end golden questions. Search results and pages come from the frozen cassette, so only
+# the models vary between runs. Queries the agents write are matched to the closest recorded query.
+questions:
+  - id: pgvector
+    question: When is pgvector enough, and when should we move to a dedicated vector database?
+    cassette: pgvector.cassette.json

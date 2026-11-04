@@ -255,3 +255,184 @@ def test_injection_gate_allows_zero_compliance() -> None:
     assert check_injection(ok, th) == [] and "b" in check_injection(bad, th)[0]
     assert check_injection(bad, InjectionThresholds(max_compliant=1)) == []
     assert "COMPLIED" in format_injection(bad)
+
+
+# ---- golden eval, prices and nearest replay ----
+def test_every_configured_model_has_a_price_and_cost_is_computed() -> None:
+    s = load_settings(CONFIG)
+    prices = s.token_prices()
+    assert {a.model for a in s.agents.by_name().values()} <= set(prices)
+    assert prices["openai/gpt-5.4"] == (2.5e-6, 15e-6)
+
+
+def test_a_model_without_a_price_fails_startup_validation(tmp_path: Path) -> None:
+    import shutil
+
+    from research_assistant.settings import ConfigError
+
+    shutil.copytree(CONFIG, tmp_path / "config")
+    (tmp_path / "config" / "prices.yaml").write_text(
+        "models:\n  openai/gpt-5.4: {input: 1, output: 1}\n"
+    )
+    with pytest.raises(ConfigError, match="no price for"):
+        load_settings(tmp_path / "config")
+
+
+def test_a_call_is_priced_from_config(tmp_path: Path) -> None:
+    from research_assistant.agents.factory import ModelFactory
+
+    s = load_settings(CONFIG)
+    budget = Budget(s.guardrails)
+    audit = AuditLog(tmp_path / "a.jsonl", "r")
+    scripts = {"critic": ['{"x": 1}']}
+    model = ModelFactory(s, budget, audit, scripts).build("critic")
+    assert model.model_id == "openai/gpt-5.4"
+
+
+def test_nearest_replay_answers_a_reworded_query_from_the_closest_recorded_one(
+    tmp_path: Path,
+) -> None:
+    from research_assistant.tools.search import (
+        RecordingBackend,
+        ReplayBackend,
+        ReplayMiss,
+        SearchResult,
+    )
+
+    class Inner:
+        def search(self, query: str, depth: str, max_results: int) -> list[SearchResult]:
+            return [
+                SearchResult(url=f"https://x.example/{query.split()[0]}", title=query, content="c")
+            ]
+
+        def extract(self, url: str) -> str:
+            return "page"
+
+    cassette = tmp_path / "c.json"
+    rec = RecordingBackend(Inner(), cassette)
+    rec.search("pgvector hnsw index memory", "basic", 5)
+    rec.search("qdrant payload filtering", "basic", 5)
+    exact = ReplayBackend(cassette)
+    with pytest.raises(ReplayMiss):
+        exact.search("hnsw memory use in pgvector", "basic", 5)
+    near = ReplayBackend(cassette, nearest=True)
+    assert (
+        near.search("hnsw memory use in pgvector", "basic", 5)[0].url
+        == "https://x.example/pgvector"
+    )
+    assert near.search("qdrant filtering", "basic", 5)[0].url == "https://x.example/qdrant"
+    with pytest.raises(ReplayMiss):
+        near.search("zzz", "basic", 5)  # nothing in common: no guess
+
+
+def _golden_result(tmp_path: Path, report: str | None, done: int = 1):  # type: ignore[no-untyped-def]
+    from research_assistant.graph.run import RunResult
+    from research_assistant.models import Board, Card, CardStatus, Note, Source
+
+    src = Source(source_id="c1-s1", kind="web", locator="https://a.example/1", title="A")
+    cards = {
+        f"c{i}": Card(
+            id=f"c{i}",
+            sub_question="q?",
+            status=CardStatus.DONE if i <= done else CardStatus.REJECTED,
+            notes=[Note(text="n", source_ids=["c1-s1"])],
+            sources=[src],
+            reason="no" if i > done else "",
+        )
+        for i in (1, 2)
+    }
+    pdir = tmp_path / "p"
+    pdir.mkdir(parents=True)
+    (pdir / "audit.jsonl").write_text("")
+    path = None
+    if report is not None:
+        (pdir / "report.md").write_text(report)
+        path = str(pdir / "report.md")
+    return RunResult("r1", "completed", Board(run_id="r1", cards=cards), path, None, pdir)
+
+
+def test_citation_validity_counts_only_claims_citing_approved_sources(tmp_path: Path) -> None:
+    from research_assistant.evals.golden_eval import citation_validity
+
+    lines = [
+        "- Good claim. [c1-s1]",
+        "- Cites nothing.",
+        "- Cites a ghost. [c9-s9]",
+        "- Fine. [c1-s1]",
+    ]
+    report = "# Q\n\n## A\n\n" + "\n".join(lines) + "\n"
+    n, validity = citation_validity(_golden_result(tmp_path, report))
+    assert n == 4 and validity == 0.5
+    assert citation_validity(_golden_result(tmp_path / "x", None)) == (0, 0.0)
+
+
+def test_measure_and_check_golden(tmp_path: Path) -> None:
+    from research_assistant.evals.golden_eval import (
+        GoldenThresholds,
+        check_golden,
+        format_golden,
+        measure,
+    )
+
+    s = load_settings(CONFIG)
+    budget = Budget(s.guardrails)
+    budget.record_llm_call("critic", 1000, 100, 0.25)
+    result = _golden_result(tmp_path, "# Q\n\n## A\n\n- Good claim. [c1-s1]\n", done=1)
+    m = measure("g", result, budget)
+    assert (m.cards, m.cards_done, m.cost_usd, m.citation_validity) == (2, 1, 0.25, 1.0)
+    ok = GoldenThresholds(
+        min_citation_validity=1.0,
+        min_cards_done_ratio=0.5,
+        max_cost_usd=1.0,
+        max_unauthorized_tool_calls=0,
+    )
+    assert check_golden(m, ok) == []
+    strict = GoldenThresholds(
+        min_citation_validity=1.0,
+        min_cards_done_ratio=0.9,
+        max_cost_usd=0.1,
+        max_unauthorized_tool_calls=0,
+    )
+    failures = check_golden(m, strict)
+    assert len(failures) == 2 and any("cost" in f for f in failures)
+    assert "citation validity" in format_golden(m)
+    none = measure("g", _golden_result(tmp_path / "n", None), budget)
+    assert "no report was written" in check_golden(none, ok)
+
+
+def test_limitations_never_carry_urls_from_error_messages_or_dropped_notes() -> None:
+    from research_assistant.models import Board, Card, CardStatus, Note, Source
+    from research_assistant.report_lint import lint_report
+    from research_assistant.reporting import limitations, plain_report
+
+    blocked = Card(
+        id="c1",
+        sub_question="q?",
+        status=CardStatus.BLOCKED,
+        reason="review failed: ReplayMiss('no recorded page for: https://x.example/p?a=1')",
+    )
+    done = Card(
+        id="c2",
+        sub_question="q2?",
+        status=CardStatus.DONE,
+        notes=[Note(text="n", source_ids=["c2-s1"])],
+        sources=[Source(source_id="c2-s1", kind="web", locator="https://ok.example/1", title="t")],
+        dropped=["see https://evil.example/z for more (unsupported: not in the page)"],
+    )
+    board = Board(run_id="r", cards={"c1": blocked, "c2": done})
+    text = " ".join(limitations(board))
+    assert "x.example" not in text and "evil.example" not in text and "a web page" in text
+    assert not any(
+        "link not from" in i for i in lint_report(plain_report(board, "Q?", None), board)
+    )
+
+
+def test_nearest_replay_treats_an_unrecorded_page_as_unreadable(tmp_path: Path) -> None:
+    from research_assistant.tools.search import ReplayBackend, ReplayMiss
+
+    cassette = tmp_path / "c.json"
+    cassette.write_text('{"version": 1, "entries": {}, "extracts": {"https://a.example": "text"}}')
+    assert ReplayBackend(cassette, nearest=True).extract("https://a.example") == "text"
+    assert ReplayBackend(cassette, nearest=True).extract("https://b.example") == ""
+    with pytest.raises(ReplayMiss):
+        ReplayBackend(cassette).extract("https://b.example")

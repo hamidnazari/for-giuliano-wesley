@@ -15,6 +15,13 @@ from research_assistant.evals.critic_eval import (
     load_thresholds,
     run_critic_eval,
 )
+from research_assistant.evals.golden_eval import (
+    check_golden,
+    format_golden,
+    load_golden_thresholds,
+    load_questions,
+    run_golden,
+)
 from research_assistant.evals.injection_cases import load_injection_cases
 from research_assistant.evals.injection_eval import (
     check_injection,
@@ -38,6 +45,28 @@ def _check_config(config_dir: Path) -> int:
     return 0
 
 
+def _eval_golden(args: argparse.Namespace, settings: Settings) -> int:
+    path = args.cases or Path("evals/golden/questions.yaml")
+    questions = load_questions(path)
+    if args.question:
+        questions = [q for q in questions if q.id == args.question]
+    th = load_golden_thresholds(args.thresholds)
+    failures: list[str] = []
+    out: list[dict[str, object]] = []
+    for q in questions:
+        m = run_golden(q, settings, args.config, path.parent, args.keep)
+        print(format_golden(m))
+        out.append(m.to_dict())
+        failures += [f"{q.id}: {f}" for f in check_golden(m, th)]
+    if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps({"runs": out}, indent=2), encoding="utf-8")
+    for f in failures:
+        print(f"FAIL: {f}", file=sys.stderr)
+    print("gate: " + ("FAILED" if failures else "passed"))
+    return 1 if failures else 0
+
+
 def _eval_injection(args: argparse.Namespace, settings: Settings) -> int:
     cases = load_injection_cases(args.cases or Path("evals/injection/cases.yaml"))
     report = run_injection_eval(cases, settings, args.config / "prompts")
@@ -57,6 +86,8 @@ def _eval(args: argparse.Namespace) -> int:
         settings = load_settings(args.config)
         if args.suite == "injection":
             return _eval_injection(args, settings)
+        if args.suite == "golden":
+            return _eval_golden(args, settings)
         report = run_critic_eval(
             load_cases(args.cases or Path("evals/critic/cases.yaml")),
             settings,
@@ -215,12 +246,14 @@ def main(argv: list[str] | None = None) -> int:
     idx.add_argument("--config", type=Path, default=Path("config"))
     idx.add_argument("--data", type=Path, default=Path("data"))
     ev = sub.add_parser("eval", help="score the Critic on planted-defect cards (needs API keys)")
-    ev.add_argument("suite", choices=["critic", "injection"])
+    ev.add_argument("suite", choices=["critic", "injection", "golden"])
     ev.add_argument("--cases", type=Path, default=None)
     ev.add_argument("--thresholds", type=Path, default=Path("evals/thresholds.yaml"))
     ev.add_argument("--config", type=Path, default=Path("config"))
     ev.add_argument("--out", type=Path, default=None, help="write the full results as JSON")
     ev.add_argument("--repeats", type=int, default=1)
+    ev.add_argument("--keep", type=Path, default=None, help="golden suite: keep run files here")
+    ev.add_argument("--question", default=None, help="golden suite: run only this question id")
     board = sub.add_parser("board", help="print a run's board (latest run by default)")
     board.add_argument("--data", type=Path, default=Path("data"))
     board.add_argument("--run", default=None, help="run ID")

@@ -148,7 +148,7 @@ class ModelFactory:
         self._budget = budget
         self._audit = audit
         self._scripts = scripts or {}
-        self._prices = prices
+        self._prices = settings.token_prices() if prices is None else prices
         self._env = os.environ if env is None else env
 
     def build(self, agent: str) -> AgentModel:

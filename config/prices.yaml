@@ -1,0 +1,6 @@
+# List prices in USD per million tokens, by model ID as used in agents.yaml.
+# Sources: OpenAI and Anthropic pricing pages, checked 2026-11-05. The Kilo gateway may add its own margin.
+models:
+  anthropic/claude-sonnet-4.6: {input: 3.00, output: 15.00}
+  anthropic/claude-haiku-4.5: {input: 1.00, output: 5.00}
+  openai/gpt-5.4: {input: 2.50, output: 15.00}
