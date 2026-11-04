@@ -27,7 +27,7 @@ def setup(
     settings = load_settings(CONFIG)
     budget = Budget(settings.guardrails)
     audit = AuditLog(tmp_path / "audit.jsonl", "r1", secrets=[])
-    prices = {"anthropic/claude-opus-4.7": (0.001, 0.002)}
+    prices = {"openai/gpt-5.4": (0.001, 0.002)}
     return (
         ModelFactory(settings, budget, audit, scripts, prices, env or {}),
         budget,

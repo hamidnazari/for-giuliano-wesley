@@ -105,6 +105,10 @@ def _parse[T: BaseModel](model: type[T], path: Path, problems: list[str]) -> T |
         return None
 
 
+def _provider(model_id: str) -> str:
+    return model_id.split("/", 1)[0]
+
+
 def _cross_check(s: Settings, prompts: Path) -> list[str]:
     problems: list[str] = []
     known = s.tools.tools
@@ -124,8 +128,11 @@ def _cross_check(s: Settings, prompts: Path) -> list[str]:
         problems.append(
             f"agents.yaml: critic: only {sorted(CRITIC_TOOLS)} allowed, got {sorted(extra)}"
         )
-    if agents["critic"].model == agents["researcher"].model:
-        problems.append("agents.yaml: critic must use a different model from researcher")
+    if _provider(agents["critic"].model) == _provider(agents["researcher"].model):
+        problems.append(
+            "agents.yaml: critic must use a different model provider from researcher "
+            "(the same provider shares blind spots)"
+        )
     if not (prompts / s.agents.critic_rubric).is_file():
         problems.append(f"agents.yaml: critic rubric '{s.agents.critic_rubric}' not found")
     ing = s.tools.ingestion

@@ -26,7 +26,8 @@ def make_config(tmp_path: Path, file: str | None = None, edit: Edit | None = Non
 
 def test_shipped_config_loads() -> None:
     settings = load_settings(REPO_CONFIG)
-    assert settings.agents.critic.model != settings.agents.researcher.model
+    critic, researcher = settings.agents.critic.model, settings.agents.researcher.model
+    assert critic.split("/")[0] != researcher.split("/")[0]
 
 
 CASES: list[tuple[str, str, Edit, str]] = [
