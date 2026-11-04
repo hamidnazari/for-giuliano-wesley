@@ -21,4 +21,5 @@ jobs:
       - run: uv run ruff check .
       - run: uv run pyright
       - run: uv run pytest -q
+      - run: uv run research-assistant check-config
       - run: gitleaks git --redact --verbose

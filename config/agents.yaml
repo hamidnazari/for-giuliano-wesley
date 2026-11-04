@@ -1,0 +1,25 @@
+# Models are provider/model IDs served by the Kilo gateway.
+# The Critic must use a different model from the Researchers.
+rubric_version: "1"
+critic_rubric: critic_rubric.md
+
+planner:
+  model: anthropic/claude-sonnet-4.6
+  prompt: planner.md
+  tools: []
+
+researcher:
+  model: anthropic/claude-haiku-4.5
+  prompt: researcher.md
+  tools: [web_search, docs_retrieve]
+  limits: {searches: 6}
+
+critic:
+  model: anthropic/claude-opus-4.7
+  prompt: critic.md
+  tools: [fetch_cited_passage]
+
+writer:
+  model: anthropic/claude-sonnet-4.6
+  prompt: writer.md
+  tools: [render_report]
