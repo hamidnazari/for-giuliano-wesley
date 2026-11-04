@@ -24,6 +24,7 @@ class ToolArgumentRejected(Exception):
 class Tool:
     name: str
     fn: Callable[..., Any]
+    allow_urls: bool = False  # only for tools that write locally and send nothing out
 
 
 class Toolbox:
@@ -74,7 +75,7 @@ class ToolRegistry:
         if tool not in allowed or tool not in configured or tool not in self._tools:
             self._audit.record(agent, "tool_blocked", {"tool": tool, "args": kwargs})
             raise ToolNotAllowed(f"{agent} may not call '{tool}'")
-        problem = self._argument_problem(kwargs)
+        problem = self._argument_problem(kwargs, self._tools[tool].allow_urls)
         if problem:
             self._audit.record(agent, "tool_rejected", {"tool": tool, "reason": problem})
             raise ToolArgumentRejected(f"{tool}: {problem}")
@@ -91,12 +92,12 @@ class ToolRegistry:
         self._audit.record(agent, "tool_result", {"tool": tool})
         return result
 
-    def _argument_problem(self, kwargs: dict[str, Any]) -> str | None:
+    def _argument_problem(self, kwargs: dict[str, Any], allow_urls: bool) -> str | None:
         """No URL may be passed in; no secret may leave through an argument."""
         for key, value in kwargs.items():
             if not isinstance(value, str):
                 continue
-            if _URL.search(value):
+            if not allow_urls and _URL.search(value):
                 return f"argument '{key}' contains a URL; tools take IDs, not URLs"
             if any(s in value for s in self._secrets):
                 return f"argument '{key}' contains a secret"
