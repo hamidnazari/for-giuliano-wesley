@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "Multi-agent research assistant: a team of agents researches a question and delivers a cited PDF."
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "pydantic>=2.14.2",
+    "pyyaml>=6.0.3",
+]
 
 [project.scripts]
 research-assistant = "research_assistant.cli:main"
@@ -22,6 +25,7 @@ dev = [
     "pyright>=1.1.414",
     "pytest>=9.2.0",
     "ruff>=0.17.3",
+    "types-pyyaml>=6.0.12.20261103",
 ]
 
 [tool.ruff]
