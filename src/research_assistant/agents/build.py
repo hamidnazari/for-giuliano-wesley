@@ -70,6 +70,7 @@ def agents_builder(
                 env.sources,
                 audit,
                 spec.limits.get("searches", 6),
+                spec.limits.get("revision_searches", 2),
                 use_documents=docs_index is not None,
             )
         critic: Critic = StubCritic()

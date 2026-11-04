@@ -245,3 +245,23 @@ def test_real_researcher_needs_a_backend() -> None:
 
 def test_agent_env_is_exported() -> None:
     assert AgentEnv.__dataclass_fields__.keys() == {"budget", "audit", "registry", "sources"}
+
+
+def test_a_revision_uses_fewer_searches_than_the_first_pass(tmp_path: Path) -> None:
+    many = json.dumps({"queries": [f"q{i}" for i in range(5)]})
+    search = FakeSearch({f"q{i}": [R1] for i in range(5)})
+    note = draft([("n", ["c1-s1"])], {})
+    r, _, store, _, _ = setup(tmp_path, [many, note, many, note], search, searches=4)
+    r.research(card())  # first pass: up to 4 searches
+    assert search.queries == ["q0", "q1", "q2", "q3"]
+    search.queries.clear()
+    old = store.get("c1-s1")
+    assert old is not None
+    revised = card(
+        sources=[old],
+        notes=[Note(text="n", source_ids=["c1-s1"])],
+        critic_feedback=["weak"],
+        attempts=2,
+    )
+    r.research(revised)  # revision: the default of 2
+    assert search.queries == ["q0", "q1"]

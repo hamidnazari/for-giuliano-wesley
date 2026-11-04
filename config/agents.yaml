@@ -1,7 +1,7 @@
 # Models are provider/model IDs served by the Kilo gateway.
 # The Critic must come from a different provider than the Researchers, so the two
 # do not share blind spots. Startup validation enforces this.
-rubric_version: "1"
+rubric_version: "2"
 critic_rubric: critic_rubric.md
 report_check_prompt: report_check.md
 
@@ -15,7 +15,7 @@ researcher:
   model: anthropic/claude-haiku-4.5
   prompt: researcher.md
   tools: [web_search, docs_retrieve]
-  limits: {searches: 4}
+  limits: {searches: 4, revision_searches: 2}
 
 critic:
   model: openai/gpt-5.4

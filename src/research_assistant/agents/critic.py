@@ -40,7 +40,10 @@ class CriticReply(BaseModel):
     notes: list[NoteJudgement]
     source_ratings: dict[str, float] = {}
     recommendation: Literal["approve", "revise", "reject", "split"]
-    objections: list[str] = []
+    objections: list[str] = Field(
+        default=[],
+        description="Card-level problems only. Never repeat a problem already given for a note.",
+    )
     split_into: list[str] = []
 
 

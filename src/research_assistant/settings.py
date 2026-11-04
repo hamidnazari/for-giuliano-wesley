@@ -139,13 +139,15 @@ def _cross_check(s: Settings, prompts: Path) -> list[str]:
         )
     if not (prompts / s.agents.critic_rubric).is_file():
         problems.append(f"agents.yaml: critic rubric '{s.agents.critic_rubric}' not found")
-    per_card = agents["researcher"].limits.get("searches")
+    first = agents["researcher"].limits.get("searches")
+    revise = agents["researcher"].limits.get("revision_searches", 0)
+    per_card = first + revise if first else None  # one revision round for every card
     needed = s.guardrails.max_sub_questions * per_card if per_card else 0
     if needed > s.guardrails.max_searches:
         problems.append(
             f"guardrails.yaml: max_searches {s.guardrails.max_searches} cannot cover "
             f"max_sub_questions {s.guardrails.max_sub_questions} x researcher searches "
-            f"{per_card} = {needed}"
+            f"({first} + {revise} for one revision) = {needed}"
         )
     if not (prompts / s.agents.report_check_prompt).is_file():
         problems.append(

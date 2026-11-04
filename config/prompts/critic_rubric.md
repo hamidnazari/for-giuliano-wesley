@@ -1,8 +1,8 @@
-Rubric, version 1
+Rubric, version 2
 
 Labels for each note
-- supported: the cited passages state the claim, or it follows directly from them, with the same numbers, names, dates and strength.
-- partial: the passages support a weaker, narrower or different version of the claim, or only part of it.
+- supported: the cited passages state the claim, or it follows directly from them, with the same numbers, names, dates and strength. A claim that is narrower than the passage is still supported if everything it says is true, for example the passage lists five items and the claim names three of them without saying "only" or "exactly".
+- partial: the passages support only a weaker or different version of what the claim says, or only part of it. Use this when the claim exaggerates: absolute words such as always, never, no, all, only or exactly that the passages do not back, or stronger numbers or causes than the passages give.
 - unsupported: the passages do not say it, or the citation points to the wrong source.
 - contradicted: the passages say something that conflicts with the claim.
 

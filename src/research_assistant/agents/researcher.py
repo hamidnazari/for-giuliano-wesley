@@ -49,6 +49,7 @@ class LLMResearcher:
         sources: SourceStore,
         audit: AuditLog,
         max_searches: int = 6,
+        revision_searches: int = 2,
         use_documents: bool = False,
     ) -> None:
         self._model = model
@@ -57,11 +58,16 @@ class LLMResearcher:
         self._sources = sources
         self._audit = audit
         self._max_searches = max_searches
+        self._revision_searches = revision_searches
         self._use_documents = use_documents
 
     def research(self, card: Card) -> Work:
         revision = self._revision_note(card)
-        found = self._search(card, self._queries(card, revision))
+        # A revision targets named objections, so it needs fewer searches than the first pass.
+        budget = (
+            min(self._max_searches, self._revision_searches) if revision else self._max_searches
+        )
+        found = self._search(card, self._queries(card, revision, budget))
         candidates = {s.source_id: s for s in [*card.sources, *found]}  # keep earlier sources
         if not candidates:
             raise ResearchFailed("no usable search results")
@@ -79,14 +85,14 @@ class LLMResearcher:
             f"Objections:\n{objections}\nYour earlier notes:\n{earlier}\n"
         )
 
-    def _queries(self, card: Card, revision: str) -> list[str]:
+    def _queries(self, card: Card, revision: str, limit: int) -> list[str]:
         request = (
             f"Sub-question: {card.sub_question}\n{revision}\n"
-            f"Propose at most {self._max_searches} distinct web search queries, fewer if fewer "
+            f"Propose at most {limit} distinct web search queries, fewer if fewer "
             f"are enough. " + json_instruction(QueryPlan)
         )
         plan = self._model.structured([self._system, HumanMessage(content=request)], QueryPlan)
-        return plan.queries[: self._max_searches]  # the per-Researcher search limit
+        return plan.queries[:limit]  # the per-Researcher search limit
 
     def _search(self, card: Card, queries: list[str]) -> list[Source]:
         found: dict[str, Source] = {}
