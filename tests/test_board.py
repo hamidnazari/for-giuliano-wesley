@@ -196,3 +196,81 @@ def test_snapshot_roundtrip_and_board_command(
     out = capsys.readouterr().out
     assert "Blocked (1)" in out and "timed out" in out
     assert main(["board", "--data", str(tmp_path), "--run", "nope"]) == 1
+
+
+def _card_with_three_notes() -> Board:
+    srcs = [
+        Source(source_id=f"c1-s{i}", kind="web", locator=f"https://x.example/{i}")
+        for i in (1, 2, 3)
+    ]
+    notes = [Note(text=f"claim {i}", source_ids=[f"c1-s{i}"]) for i in (1, 2, 3)]
+    return apply(
+        board(),
+        [
+            CreateCard(op_id="o1", card_id="c1", sub_question="q?"),
+            Claim(op_id="o2", card_id="c1"),
+            SubmitWork(
+                op_id="o3",
+                card_id="c1",
+                notes=notes,
+                sources=srcs,
+                credibility={"c1-s1": 0.9, "c1-s2": 0.5, "c1-s3": 0.4},
+            ),
+        ],
+    )
+
+
+def test_revise_removes_flagged_notes_and_freezes_the_rest() -> None:
+    b = _card_with_three_notes()
+    v = verdict(
+        VerdictKind.REVISE,
+        objections=["Note 2 overstates"],
+        dropped_notes={2: "partial: overstated"},
+    )
+    c = apply(b, [Review(op_id="r1", card_id="c1", verdict=v)]).cards["c1"]
+    assert c.status is CardStatus.IN_PROGRESS and c.attempts == 2
+    assert [n.text for n in c.notes] == ["claim 1", "claim 3"] and c.verified_notes == 2
+    assert [s.source_id for s in c.sources] == ["c1-s1", "c1-s3"]
+    assert c.credibility == {"c1-s1": 0.9, "c1-s3": 0.4}
+    assert c.dropped == ["claim 2 (partial: overstated)"] and c.open_objections == [
+        "Note 2 overstates"
+    ]
+
+
+def test_approve_can_drop_notes_and_clears_open_objections() -> None:
+    b = _card_with_three_notes()
+    v = verdict(VerdictKind.APPROVE, dropped_notes={3: "unsupported: not in the page"})
+    c = apply(b, [Review(op_id="r1", card_id="c1", verdict=v)]).cards["c1"]
+    assert c.status is CardStatus.DONE and [n.text for n in c.notes] == ["claim 1", "claim 2"]
+    assert c.open_objections == [] and c.dropped == ["claim 3 (unsupported: not in the page)"]
+
+
+def test_cannot_approve_with_every_note_dropped_or_drop_a_missing_note() -> None:
+    from research_assistant.board.reducer import BoardError
+
+    b = _card_with_three_notes()
+    everything = verdict(VerdictKind.APPROVE, dropped_notes={1: "a", 2: "b", 3: "c"})
+    with pytest.raises(BoardError, match="no surviving notes"):
+        apply(b, [Review(op_id="r1", card_id="c1", verdict=everything)])
+    with pytest.raises(BoardError, match="does not exist"):
+        apply(
+            b,
+            [
+                Review(
+                    op_id="r2",
+                    card_id="c1",
+                    verdict=verdict(VerdictKind.REVISE, objections=["x"], dropped_notes={9: "x"}),
+                )
+            ],
+        )
+    with pytest.raises(Exception, match="start at 1"):
+        verdict(VerdictKind.REVISE, objections=["x"], dropped_notes={0: "x"})
+
+
+def test_dropped_claims_are_listed_as_limitations() -> None:
+    from research_assistant.reporting import limitations
+
+    b = _card_with_three_notes()
+    v = verdict(VerdictKind.APPROVE, dropped_notes={3: "unsupported"})
+    done = apply(b, [Review(op_id="r1", card_id="c1", verdict=v)])
+    assert limitations(done) == ["c1: dropped after failing review: claim 3 (unsupported)"]

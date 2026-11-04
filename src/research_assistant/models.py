@@ -54,9 +54,17 @@ class Card(Strict):
     attempts: int = Field(default=0, ge=0)
     parent_id: str | None = None  # set on children created by a split verdict
     reason: str = ""  # why the card is Blocked or Rejected
+    # Review prunes instead of restarting: notes the Critic found supported are kept (the first
+    # `verified_notes` of them), flagged ones are removed and recorded here, and the latest
+    # objections tell the Researcher what to replace.
+    verified_notes: int = Field(default=0, ge=0)
+    dropped: list[str] = Field(default_factory=list)
+    open_objections: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check(self) -> Self:
+        if self.verified_notes > len(self.notes):
+            raise ValueError("verified_notes cannot exceed the number of notes")
         known = {s.source_id for s in self.sources}
         for note in self.notes:
             missing = set(note.source_ids) - known
@@ -99,9 +107,13 @@ class Verdict(Strict):
     citation_checks: list[CitationCheck] = []
     split_into: list[str] = Field(default_factory=list)  # child sub-questions
     source_ratings: dict[str, float] = {}  # the Critic's own credibility rating per source
+    # 1-based indices of notes that failed review, with the reason. They are removed from the card.
+    dropped_notes: dict[int, str] = {}
 
     @model_validator(mode="after")
     def _check(self) -> Self:
+        if any(i < 1 for i in self.dropped_notes):
+            raise ValueError("dropped note numbers start at 1")
         for sid, score in self.source_ratings.items():
             if not 0 <= score <= 1:
                 raise ValueError(f"rating for {sid} must be within 0..1")

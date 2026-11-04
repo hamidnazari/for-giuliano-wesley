@@ -1,7 +1,7 @@
 # Models are provider/model IDs served by the Kilo gateway.
 # The Critic must come from a different provider than the Researchers, so the two
 # do not share blind spots. Startup validation enforces this.
-rubric_version: "2"
+rubric_version: "3"
 critic_rubric: critic_rubric.md
 report_check_prompt: report_check.md
 

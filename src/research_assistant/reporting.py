@@ -19,6 +19,8 @@ def limitations(board: Board) -> list[str]:
             gaps.append(f"{card.id}: {card.sub_question} ({card.status.value}: {card.reason})")
         elif card.status in _OPEN:
             gaps.append(f"{card.id}: {card.sub_question} (not completed)")
+        if card.status is CardStatus.DONE:
+            gaps += [f"{card.id}: dropped after failing review: {line}" for line in card.dropped]
     return gaps
 
 

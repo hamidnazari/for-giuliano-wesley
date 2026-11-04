@@ -67,22 +67,36 @@ class LLMResearcher:
         budget = (
             min(self._max_searches, self._revision_searches) if revision else self._max_searches
         )
-        found = self._search(card, self._queries(card, revision, budget))
-        candidates = {s.source_id: s for s in [*card.sources, *found]}  # keep earlier sources
-        if not candidates:
-            raise ResearchFailed("no usable search results")
-        draft = self._notes(card, list(candidates.values()), revision)
-        return self._to_work(card, draft, candidates)
+        kept = card.notes[: card.verified_notes]  # already judged supported: final
+        try:
+            found = self._search(card, self._queries(card, revision, budget))
+            if revision and not found:  # nothing new to write notes from
+                raise ResearchFailed("no new sources found for the removed notes")
+            candidates = {s.source_id: s for s in [*card.sources, *found]}  # keep earlier sources
+            if not candidates:
+                raise ResearchFailed("no usable search results")
+            draft = self._notes(card, list(candidates.values()), revision)
+            return self._to_work(card, draft, candidates)
+        except ResearchFailed:
+            if not kept:
+                raise
+            # Nothing new was found, but the verified notes still stand; the Critic settles it.
+            return self._work_from(card, kept, {})
 
     @staticmethod
     def _revision_note(card: Card) -> str:
-        if not card.critic_feedback:
+        if not card.open_objections:
             return ""
-        earlier = "\n".join(f"- {n.text} [{', '.join(n.source_ids)}]" for n in card.notes)
-        objections = "\n".join(f"- {o}" for o in card.critic_feedback)
+        kept = "\n".join(f"- {n.text}" for n in card.notes[: card.verified_notes]) or "(none)"
+        removed = "\n".join(f"- {d}" for d in card.dropped) or "(none)"
+        problems = "\n".join(f"- {o}" for o in card.open_objections)
         return (
-            "\nA reviewer rejected your earlier work. Address these objections.\n"
-            f"Objections:\n{objections}\nYour earlier notes:\n{earlier}\n"
+            "\nA reviewer checked your earlier notes against the pages they cite.\n"
+            f"Notes that passed. They are final, so do not write them again:\n{kept}\n"
+            f"Notes that failed and were removed. Never write these again unchanged:\n{removed}\n"
+            f"Problems the reviewer found:\n{problems}\n"
+            "Write only NEW notes: a corrected note that says just what a source supports, or a "
+            "note backed by better evidence. If a claim cannot be supported, leave it out.\n"
         )
 
     def _queries(self, card: Card, revision: str, limit: int) -> list[str]:
@@ -130,6 +144,8 @@ class LLMResearcher:
         return self._model.structured([self._system, HumanMessage(content=request)], ResearchDraft)
 
     def _to_work(self, card: Card, draft: ResearchDraft, known: dict[str, Source]) -> Work:
+        failed = {d.rsplit(" (", 1)[0].strip().lower() for d in card.dropped}
+        have = {n.text.strip().lower() for n in card.notes[: card.verified_notes]}
         notes: list[Note] = []
         for n in draft.notes:
             ids = [i for i in n.source_ids if i in known]
@@ -137,18 +153,31 @@ class LLMResearcher:
                 self._audit.record(
                     "researcher", "unknown_citation_dropped", {"card": card.id, "note": n.text[:80]}
                 )
+            text = n.text.strip().lower()
+            if text in failed or text in have:  # a failed or repeated note adds nothing
+                self._audit.record("researcher", "repeat_dropped", {"card": card.id})
+                continue
             if ids:
                 notes.append(Note(text=n.text, source_ids=ids))
-        if not notes:
+        kept = card.notes[: card.verified_notes]
+        if not notes and not kept:
             raise ResearchFailed("the notes cited no known sources")
+        scores = {sid: min(1.0, max(0.0, score)) for sid, score in draft.credibility.items()}
+        return self._work_from(card, [*kept, *notes], known, scores)
+
+    @staticmethod
+    def _work_from(
+        card: Card,
+        notes: list[Note],
+        known: dict[str, Source],
+        scores: dict[str, float] | None = None,
+    ) -> Work:
+        """Notes plus exactly the sources they cite, with ratings carried over from the card."""
+        pool = {s.source_id: s for s in [*card.sources, *known.values()]}
         cited = {i for n in notes for i in n.source_ids}
-        credibility = {
-            sid: min(1.0, max(0.0, score))
-            for sid, score in draft.credibility.items()
-            if sid in cited
-        }
+        ratings = {**card.credibility, **(scores or {})}
         return Work(
             notes=notes,
-            sources=[s for sid, s in known.items() if sid in cited],
-            credibility=credibility,
+            sources=[s for sid, s in pool.items() if sid in cited],
+            credibility={sid: r for sid, r in ratings.items() if sid in cited},
         )

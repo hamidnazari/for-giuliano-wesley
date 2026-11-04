@@ -86,6 +86,7 @@ def agents_builder(
                 env.registry.for_agent("critic"),
                 audit,
                 settings.agents.rubric_version,
+                min(settings.guardrails.max_critic_rounds, settings.guardrails.max_card_attempts),
             )
         writer: Writer = StubWriter()
         if "writer" in real:

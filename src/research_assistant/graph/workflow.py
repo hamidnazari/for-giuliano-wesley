@@ -128,9 +128,11 @@ def build_graph(ctx: RunContext) -> CompiledStateGraph[Any, Any, Any, Any]:
         try:
             attempt = ctx.budget.start_attempt(card.id)
         except CardLimitExceeded as e:
+            open_items = "; ".join(card.open_objections[:3])
+            reason = f"{e}" + (f". Open objections: {open_items}" if open_items else "")
             return {
                 "board": [
-                    Reject(op_id=f"reject:{card.id}:attempts", card_id=card.id, reason=str(e))
+                    Reject(op_id=f"reject:{card.id}:attempts", card_id=card.id, reason=reason)
                 ]
             }
         ops: list[Op] = []

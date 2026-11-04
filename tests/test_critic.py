@@ -54,11 +54,12 @@ def reply(
     ratings: dict[str, float] | None = None,
     objections: list[str] | None = None,
     split: list[str] | None = None,
+    first: int = 1,
 ) -> str:
     return json.dumps(
         {
             "notes": [
-                {"index": i, "label": lab, "reason": f"r{i}"} for i, lab in enumerate(labels, 1)
+                {"index": i, "label": lab, "reason": f"r{i}"} for i, lab in enumerate(labels, first)
             ],
             "source_ratings": ratings or {},
             "recommendation": rec,
@@ -141,9 +142,9 @@ def test_unsupported_note_means_revise_with_a_named_objection(tmp_path: Path) ->
     v = c.review(card, 1)
     assert v.kind is VerdictKind.REVISE
     assert (
-        v.objections[0].startswith("Note 2 is unsupported")
-        and "Pinecone pricing" in v.objections[0]
+        v.objections[0].startswith("Note 2 (Pinecone pricing") and "unsupported" in v.objections[0]
     )
+    assert v.dropped_notes == {2: "unsupported: r2"}  # cut from the card, not retried whole
     checks = {x.source_id: x.supported for x in v.citation_checks}
     assert checks == {"c1-s1": True, "c1-s2": False}
 
@@ -151,7 +152,7 @@ def test_unsupported_note_means_revise_with_a_named_objection(tmp_path: Path) ->
 def test_model_cannot_approve_over_a_flagged_note(tmp_path: Path) -> None:
     c, card, _, _, _, audit = make(tmp_path, [N1, N2], [reply(["supported", "partial"], "approve")])
     v = c.review(card, 1)
-    assert v.kind is VerdictKind.REVISE and "Note 2 is partial" in v.objections[0]
+    assert v.kind is VerdictKind.REVISE and "is partial" in v.objections[0]
     assert "approve_overridden" in types(audit)
 
 
@@ -281,7 +282,8 @@ def test_critic_ratings_replace_the_researchers_on_the_board(tmp_path: Path) -> 
             Review(op_id="o4", card_id="c1", verdict=v),
         ],
     )
-    assert board.cards["c1"].credibility == {"c1-s1": 0.95, "c1-s2": 0.7}
+    assert board.cards["c1"].credibility == {"c1-s1": 0.95}  # c1-s2 is cited by no note
+    assert [s.source_id for s in board.cards["c1"].sources] == ["c1-s1"]
 
 
 def test_real_critic_in_the_graph_revises_then_approves(tmp_path: Path) -> None:
@@ -299,7 +301,7 @@ def test_real_critic_in_the_graph_revises_then_approves(tmp_path: Path) -> None:
             json.dumps({"queries": ["q2"]}),
             json.dumps(
                 {
-                    "notes": [{"text": "Vectors are arrays.", "source_ids": ["c1-s1"]}],
+                    "notes": [{"text": "Vectors are numeric arrays.", "source_ids": ["c1-s1"]}],
                     "credibility": {"c1-s1": 0.8},
                 }
             ),
@@ -338,3 +340,94 @@ def test_real_critic_in_the_graph_revises_then_approves(tmp_path: Path) -> None:
 def test_real_critic_needs_a_page_backend() -> None:
     with pytest.raises(ValueError, match="page backend"):
         agents_builder(load_settings(CONFIG), CONFIG / "prompts", real=["critic"])
+
+
+def test_a_second_round_judges_only_the_new_notes(tmp_path: Path) -> None:
+    c, card, fake, backend, budget, _ = make(tmp_path, [N1, N2], [reply(["supported"], first=2)])
+    returned = card.model_copy(update={"verified_notes": 1})  # N1 passed earlier
+    v = c.review(returned, 2)
+    assert v.kind is VerdictKind.APPROVE
+    assert (
+        backend.calls == ["https://b.example/2"] and budget.fetches == 1
+    )  # N1's page not refetched
+    prompt = fake.seen[0][1]
+    assert "Notes verified in an earlier round" in prompt and "Note 2:" in prompt
+    assert "Note 1:" not in prompt  # context only
+
+
+def test_last_round_approves_what_survived_and_lists_the_rest(tmp_path: Path) -> None:
+    c, card, *_ = make(tmp_path, [N1, N2], [reply(["supported", "partial"], "revise")])
+    v = c.review(card, 3)  # the final allowed round
+    assert v.kind is VerdictKind.APPROVE and v.objections == []
+    assert list(v.dropped_notes) == [2] and all(x.supported for x in v.citation_checks)
+
+
+def test_last_round_with_nothing_left_is_a_rejection(tmp_path: Path) -> None:
+    c, card, *_ = make(tmp_path, [N1], [reply(["unsupported"], "revise")])
+    v = c.review(card, 3)
+    assert v.kind is VerdictKind.REJECT and "unsupported" in v.objections[0]
+
+
+def test_an_earlier_round_cuts_flagged_notes_and_asks_for_replacements(tmp_path: Path) -> None:
+    c, card, *_ = make(tmp_path, [N1, N2], [reply(["supported", "unsupported"], "approve")])
+    v = c.review(card, 1)
+    assert v.kind is VerdictKind.REVISE and list(v.dropped_notes) == [2]
+
+
+def test_blogs_rated_in_the_usable_band_are_not_weak(tmp_path: Path) -> None:
+    c, card, *_ = make(tmp_path, [N1], [reply(["supported"], ratings={"c1-s1": 0.35})])
+    assert c.review(card, 1).kind is VerdictKind.APPROVE  # 0.3 to 0.5 is usable with care
+    c2, card2, *_ = make(tmp_path, [N1], [reply(["supported"], ratings={"c1-s1": 0.25})])
+    assert c2.review(card2, 1).kind is VerdictKind.REVISE
+
+
+def test_scripted_flow_revise_then_approve_keeps_good_notes(tmp_path: Path) -> None:
+    settings = load_settings(CONFIG)
+
+    def note(text: str, source: str) -> dict[str, object]:
+        return {"text": text, "source_ids": [source]}
+
+    scripts = {
+        "planner": [json.dumps({"question": "Q?", "sub_questions": ["How do they differ?"]})],
+        "researcher": [
+            json.dumps({"queries": ["q"]}),
+            json.dumps(
+                {
+                    "notes": [note("Good claim.", "c1-s1"), note("Overstated claim.", "c1-s1")],
+                    "credibility": {"c1-s1": 0.8},
+                }
+            ),
+            json.dumps({"queries": ["q2"]}),
+            json.dumps(
+                {
+                    "notes": [
+                        note("Overstated claim.", "c1-s1"),
+                        note("Corrected claim.", "c1-s1"),
+                    ],
+                    "credibility": {"c1-s1": 0.8},
+                }
+            ),
+        ],
+        "critic": [
+            reply(["supported", "partial"], "revise"),
+            reply(["supported"], "approve", ratings={"c1-s1": 0.9}, first=2),
+        ],
+    }
+
+    class Backend:
+        def search(self, query: str, depth: str, max_results: int) -> list[SearchResult]:
+            return [SearchResult(url="https://a.example/1", title="A", content="text")]
+
+        def extract(self, url: str) -> str:
+            return "a page"
+
+    make_agents = agents_builder(
+        settings, CONFIG / "prompts", real=["planner", "researcher", "critic"], scripts=scripts,
+        search_backend=Backend(), page_backend=Backend(),
+    )  # fmt: skip
+    r = run_research("Q?", settings, tmp_path, AutoApproveIO(), make_agents)
+    card = r.board.cards["c1"]
+    assert card.status is CardStatus.DONE
+    # The overstated claim came back unchanged and was filtered; the corrected one was added.
+    assert [n.text for n in card.notes] == ["Good claim.", "Corrected claim."]
+    assert card.dropped == ["Overstated claim. (partial: r2)"] and card.attempts == 2

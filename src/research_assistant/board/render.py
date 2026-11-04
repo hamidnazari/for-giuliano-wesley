@@ -56,6 +56,10 @@ def card_markdown(card: Card) -> str:
                 for s in card.sources
             )
         )
+    if card.dropped:
+        parts.append(
+            "**Dropped after failing review**\n" + "\n".join(f"- {d}" for d in card.dropped)
+        )
     if card.critic_feedback:
         parts.append("**Critic feedback**\n" + "\n".join(f"- {f}" for f in card.critic_feedback))
     return "\n\n".join(parts)

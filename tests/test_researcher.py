@@ -168,11 +168,16 @@ def test_revision_sees_objections_and_keeps_earlier_sources(tmp_path: Path) -> N
     prior = card(
         sources=[old],
         notes=[Note(text="old note", source_ids=["c1-s1"])],
-        critic_feedback=["weak source"],
+        verified_notes=1,
+        open_objections=["weak source"],
+        dropped=["a failed claim (unsupported: not in the page)"],
         attempts=2,
     )
     work = r.research(prior)
-    assert "weak source" in fake.seen[0][1] and "old note" in fake.seen[1][1]
+    prompt = fake.seen[1][1]
+    assert "weak source" in fake.seen[0][1] and "old note" in prompt
+    assert "a failed claim" in prompt and "do not write them again" in prompt
+    assert [n.text for n in work.notes] == ["old note", "kept", "new"]  # verified note first
     assert [s.source_id for s in work.sources] == ["c1-s1", "c1-s2"]
     assert work.sources[0].locator == "https://a.example/1"  # earlier source survived
 
@@ -260,8 +265,44 @@ def test_a_revision_uses_fewer_searches_than_the_first_pass(tmp_path: Path) -> N
     revised = card(
         sources=[old],
         notes=[Note(text="n", source_ids=["c1-s1"])],
-        critic_feedback=["weak"],
+        verified_notes=1,
+        open_objections=["weak"],
         attempts=2,
     )
     r.research(revised)  # revision: the default of 2
     assert search.queries == ["q0", "q1"]
+
+
+def test_a_note_that_already_failed_is_not_accepted_again(tmp_path: Path) -> None:
+    search = FakeSearch({"better": [R2]})
+    again = draft([("Failed claim.", ["c1-s1"]), ("Fresh claim.", ["c1-s1"])], {})
+    r, _, store, audit, _ = setup(tmp_path, [json.dumps({"queries": ["better"]}), again], search)
+    old = store.add("c1", R1)
+    prior = card(
+        sources=[old],
+        notes=[Note(text="Kept claim.", source_ids=["c1-s1"])],
+        verified_notes=1,
+        open_objections=["Note 2 failed"],
+        dropped=["Failed claim. (unsupported: not in the page)"],
+        attempts=2,
+    )
+    work = r.research(prior)
+    assert [n.text for n in work.notes] == ["Kept claim.", "Fresh claim."]
+    assert "repeat_dropped" in [e.type for e in audit.events()]
+
+
+def test_nothing_new_found_still_returns_the_verified_notes(tmp_path: Path) -> None:
+    search = FakeSearch({"better": []})
+    r, _, store, _, _ = setup(tmp_path, [json.dumps({"queries": ["better"]})], search)
+    old = store.add("c1", R1)
+    prior = card(
+        sources=[old],
+        notes=[Note(text="Kept claim.", source_ids=["c1-s1"])],
+        verified_notes=1,
+        open_objections=["Note 2 failed"],
+        credibility={"c1-s1": 0.7},
+        attempts=2,
+    )
+    prior = prior.model_copy(update={"sources": [old]})
+    work = r.research(prior)
+    assert [n.text for n in work.notes] == ["Kept claim."] and work.credibility == {"c1-s1": 0.7}
