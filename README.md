@@ -94,5 +94,6 @@ exits 1 if a gate fails and `--out file.json` saves the full results.
     mise run eval:injection    # agents must ignore instructions planted in pages, documents, notes
     mise run eval:golden       # end to end over a frozen corpus: citation validity, cost, cards
 
-CI runs the checks on every push and the three evals on pull requests from this repository
-(add a `KILO_API_KEY` repository secret). Results upload as the `eval-results` artifact.
+CI runs the checks on every push and the three evals after them, on pushes to `trunk` and on
+pull requests from this repository (add a `KILO_API_KEY` repository secret; each eval run costs
+about $1). Results upload as the `eval-results` artifact.

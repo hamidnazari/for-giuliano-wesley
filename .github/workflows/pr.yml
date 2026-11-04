@@ -24,9 +24,12 @@ jobs:
 
   evals:
     # Live-model evals. They need the KILO_API_KEY repository secret, which pull requests from
-    # forks cannot read, so they run only for branches in this repository.
+    # forks cannot read, so they run for pushes to trunk and for branches in this repository.
     needs: checks
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     concurrency:
       group: evals-${{ github.ref }}
