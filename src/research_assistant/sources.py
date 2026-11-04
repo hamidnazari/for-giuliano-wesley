@@ -36,6 +36,24 @@ class SourceStore:
             self._by_card_url[(card_id, result.url)] = source.source_id
             return source
 
+    def add_doc(self, card_id: str, chunk_id: str, title: str, text: str) -> Source:
+        """Store a document chunk for a card. The same chunk on the same card keeps its ID."""
+        with self._lock:
+            known = self._by_card_url.get((card_id, chunk_id))
+            if known:
+                return self._by_id[known]
+            self._counts[card_id] += 1
+            source = Source(
+                source_id=f"{card_id}-s{self._counts[card_id]}",
+                kind="doc",
+                locator=chunk_id,
+                title=title,
+                snippet=text[:_MAX_SNIPPET],
+            )
+            self._by_id[source.source_id] = source
+            self._by_card_url[(card_id, chunk_id)] = source.source_id
+            return source
+
     def get(self, source_id: str) -> Source | None:
         with self._lock:
             return self._by_id.get(source_id)

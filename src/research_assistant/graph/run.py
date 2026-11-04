@@ -79,6 +79,7 @@ def run_research(
             "plan": None,
             "approved": False,
             "board": Board(run_id=run_id),
+            "stop_reason": None,
             "report_path": None,
         }
         stop_reason: str | None = None
@@ -93,10 +94,15 @@ def run_research(
             stop_reason = f"step limit of {limit} reached"
 
         board: Board = state["board"]
-        if stop_reason:
+        if stop_reason is None and state["stop_reason"]:
+            # a cap tripped inside the graph, which already wrote the partial report
+            stop_reason = state["stop_reason"]
+            audit.record("run", "run_stopped", {"reason": stop_reason})
+            path, status = state["report_path"], "stopped"
+        elif stop_reason:
             audit.record("run", "run_stopped", {"reason": stop_reason})
             path = write_report(ctx, board, question, stop_reason)
-            status: Status = "stopped"
+            status = "stopped"
         elif state["plan"] is not None and not state["approved"]:
             audit.record("run", "run_declined", {})
             path, status = None, "declined"

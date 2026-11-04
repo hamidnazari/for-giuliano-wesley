@@ -19,6 +19,7 @@ mise-activated shell, or prefix them with `mise exec --`.
 
     uv run research-assistant run "your question" --auto-approve
     uv run research-assistant run "your question" --real planner   # planner on a real model
+    uv run research-assistant index ./my-docs      # optional: let researchers use your own files
     uv run research-assistant board
 
 Agents without a real implementation yet run as stubs. `index` is added as it is built.

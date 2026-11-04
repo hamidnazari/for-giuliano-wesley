@@ -38,7 +38,11 @@ class RunContext:
 
 def write_report(ctx: RunContext, board: Board, question: str, stop_reason: str | None) -> str:
     """Ask the Writer for markdown and save it with the render_report tool."""
-    markdown = ctx.agents.writer.write(board, question, stop_reason)
+    try:
+        markdown = ctx.agents.writer.write(board, question, stop_reason)
+    except BudgetExceeded as e:  # no budget left for the model: fall back to the approved notes
+        ctx.audit.record("writer", "writer_skipped", {"reason": str(e)})
+        markdown = plain_report(board, question, stop_reason or str(e))
     issues = lint_report(markdown, board)
     if issues:  # whatever wrote it, the report on disk must pass lint
         ctx.audit.record("writer", "report_lint_failed", {"problems": issues})
@@ -49,6 +53,10 @@ def write_report(ctx: RunContext, board: Board, question: str, stop_reason: str 
     path = ctx.writer_tools.call("render_report", markdown=markdown)
     ctx.audit.record("writer", "report_written", {"path": path, "partial": bool(stop_reason)})
     return str(path)
+
+
+def first_reason(left: str | None, right: str | None) -> str | None:
+    return left or right
 
 
 def build_graph(ctx: RunContext) -> CompiledStateGraph[Any, Any, Any, Any]:
@@ -69,6 +77,7 @@ def build_graph(ctx: RunContext) -> CompiledStateGraph[Any, Any, Any, Any]:
         plan: Plan | None
         approved: bool
         board: Annotated[Board, reduce_board]
+        stop_reason: Annotated[str | None, first_reason]
         report_path: str | None
 
     def plan_node(state: RunState) -> dict[str, Any]:
@@ -95,10 +104,15 @@ def build_graph(ctx: RunContext) -> CompiledStateGraph[Any, Any, Any, Any]:
         return {"board": ops}
 
     def dispatch(state: RunState) -> dict[str, Any]:
-        ctx.budget.check_wall_clock()
+        try:
+            ctx.budget.check_wall_clock()
+        except BudgetExceeded as e:
+            return {"stop_reason": str(e)}
         return {}
 
     def route(state: RunState) -> list[Send] | str:
+        if state["stop_reason"]:  # a cap tripped: keep what exists and write the partial report
+            return "write"
         cards = list(state["board"].cards.values())
         count = len(cards)
         todo = [c for c in cards if c.status in (CardStatus.BACKLOG, CardStatus.IN_PROGRESS)]
@@ -124,8 +138,17 @@ def build_graph(ctx: RunContext) -> CompiledStateGraph[Any, Any, Any, Any]:
             ops.append(Claim(op_id=f"claim:{card.id}:{attempt}", card_id=card.id))
         try:
             work = ctx.agents.researcher.research(card)
-        except BudgetExceeded:
-            raise
+        except BudgetExceeded as e:
+            # Raising here would throw away the other parallel branches. Block this card and
+            # tell the graph to stop after this step instead.
+            ops.append(
+                Block(
+                    op_id=f"block:{card.id}:{attempt}",
+                    card_id=card.id,
+                    reason=f"run stopped: {e}",
+                )
+            )
+            return {"board": ops, "stop_reason": str(e)}
         except Exception as e:
             ctx.audit.record("researcher", "research_failed", {"card": card.id, "error": repr(e)})
             ops.append(
@@ -157,7 +180,22 @@ def build_graph(ctx: RunContext) -> CompiledStateGraph[Any, Any, Any, Any]:
             return {
                 "board": [Block(op_id=f"block:{card.id}:rounds", card_id=card.id, reason=reason)]
             }
-        verdict = ctx.agents.critic.review(card, round_number)
+        try:
+            verdict = ctx.agents.critic.review(card, round_number)
+        except BudgetExceeded as e:
+            return {"stop_reason": str(e)}  # the card stays in review; the report says so
+        except Exception as e:
+            ctx.audit.record("critic", "review_failed", {"card": card.id, "error": repr(e)})
+            reason = f"review failed: {e!r}"
+            return {
+                "board": [
+                    Block(
+                        op_id=f"block:{card.id}:review{round_number}",
+                        card_id=card.id,
+                        reason=reason,
+                    )
+                ]
+            }
         if verdict.kind is VerdictKind.SPLIT and arg["card_count"] + len(verdict.split_into) > cap:
             verdict = Verdict(
                 card_id=card.id,
@@ -172,7 +210,8 @@ def build_graph(ctx: RunContext) -> CompiledStateGraph[Any, Any, Any, Any]:
         }
 
     def write(state: RunState) -> dict[str, Any]:
-        return {"report_path": write_report(ctx, state["board"], state["question"], None)}
+        path = write_report(ctx, state["board"], state["question"], state["stop_reason"])
+        return {"report_path": path}
 
     g = StateGraph(RunState)
     g.add_node("plan", plan_node)

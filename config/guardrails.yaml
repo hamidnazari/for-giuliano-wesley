@@ -1,6 +1,6 @@
 max_llm_calls: 200
 max_tokens: 500000
-max_searches: 40
+max_searches: 60
 max_wall_clock_seconds: 1800
 max_critic_rounds: 3
 max_card_attempts: 3

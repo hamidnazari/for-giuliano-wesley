@@ -265,3 +265,22 @@ def test_multi_source_citations_lint_and_fallback_are_clean() -> None:
     assert lint_report(plain_report(b, "Q?", None), b) == []
     issues = lint_report("# T\n\n## A\n\nJoint claim. [c1-s1, ghost]\n", b)
     assert any("unknown source [ghost]" in i for i in issues)
+
+
+def test_dropped_claim_notes_are_clean_and_documents_are_labelled(tmp_path: Path) -> None:
+    from research_assistant.agents.writer import _preview  # pyright: ignore[reportPrivateUsage]
+    from research_assistant.reporting import sources_section
+
+    assert _preview("- A bullet with a marker") == "A bullet with a marker"
+    long = _preview("word " * 60)
+    assert long.endswith("…") and len(long) <= 100
+    doc = Source(source_id="c1-s1", kind="doc", locator="notes.md#c1", title="notes.md")
+    card = Card(
+        id="c1",
+        sub_question="q?",
+        status=CardStatus.DONE,
+        notes=[Note(text="n", source_ids=["c1-s1"])],
+        sources=[doc],
+    )
+    lines = sources_section(Board(run_id="r1", cards={"c1": card}))
+    assert "- [c1-s1] notes.md (your document, chunk notes.md#c1)" in lines

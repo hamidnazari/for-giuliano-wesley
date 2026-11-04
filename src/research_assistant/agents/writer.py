@@ -69,6 +69,11 @@ class ReportChecker:
         return [c for i, c in enumerate(items) if i not in supported]  # missing means unsupported
 
 
+def _preview(text: str, limit: int = 100) -> str:
+    text = text.lstrip("-*• ").strip()
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
 def _strip_own_sections(body: str) -> str:
     """Remove any Limitations or Sources section the model wrote; code adds the real ones."""
     kept: list[str] = []
@@ -174,7 +179,8 @@ class LLMWriter:
         # Only unsupported claims remain: drop them and say so.
         parts.body = _drop_lines(parts.body, bad)
         parts.extra_limits = [
-            f"Removed a statement the approved notes did not support: {c.text[:100]}" for c in bad
+            f"Removed a statement the approved notes did not support: {_preview(c.text)}"
+            for c in bad
         ]
         final = parts.assemble()
         if lint_report(final, board):

@@ -49,6 +49,7 @@ class LLMResearcher:
         sources: SourceStore,
         audit: AuditLog,
         max_searches: int = 6,
+        use_documents: bool = False,
     ) -> None:
         self._model = model
         self._system = SystemMessage(content=system_prompt)
@@ -56,6 +57,7 @@ class LLMResearcher:
         self._sources = sources
         self._audit = audit
         self._max_searches = max_searches
+        self._use_documents = use_documents
 
     def research(self, card: Card) -> Work:
         revision = self._revision_note(card)
@@ -99,15 +101,24 @@ class LLMResearcher:
             for item in raw:
                 source = self._sources.add(card.id, SearchResult.model_validate(item))
                 found[source.source_id] = source
+            if self._use_documents:  # local and free, so it does not count as a search
+                for hit in self._tools.call("docs_retrieve", query=query):
+                    source = self._sources.add_doc(
+                        card.id,
+                        hit["chunk_id"],
+                        hit["doc"] + (f" (page {hit['page']})" if hit["page"] else ""),
+                        hit["text"],
+                    )
+                    found[source.source_id] = source
         return list(found.values())
 
     def _notes(self, card: Card, sources: list[Source], revision: str) -> ResearchDraft:
         listing = "\n\n".join(
             f"[{s.source_id}] {s.title or '(untitled)'} ({s.locator})\n{s.snippet}" for s in sources
         )
-        data = wrap_untrusted(listing, "web search results")
+        data = wrap_untrusted(listing, "web search results and excerpts from the user's documents")
         request = (
-            f"Sub-question: {card.sub_question}\n{revision}\nSearch results:\n{data}\n\n"
+            f"Sub-question: {card.sub_question}\n{revision}\nSources:\n{data}\n\n"
             "Write the notes now. " + json_instruction(ResearchDraft)
         )
         return self._model.structured([self._system, HumanMessage(content=request)], ResearchDraft)

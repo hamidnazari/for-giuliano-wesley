@@ -59,6 +59,8 @@ class IngestionConfig(Strict):
     chunk_size: int = Field(gt=0)
     chunk_overlap: int = Field(ge=0)
     embedding_model: str = Field(min_length=1)
+    top_k: int = Field(default=4, gt=0)
+    min_score: float = Field(default=0.0, ge=0, le=1)
 
 
 class ToolsConfig(Strict):
@@ -136,6 +138,14 @@ def _cross_check(s: Settings, prompts: Path) -> list[str]:
         )
     if not (prompts / s.agents.critic_rubric).is_file():
         problems.append(f"agents.yaml: critic rubric '{s.agents.critic_rubric}' not found")
+    per_card = agents["researcher"].limits.get("searches")
+    needed = s.guardrails.max_sub_questions * per_card if per_card else 0
+    if needed > s.guardrails.max_searches:
+        problems.append(
+            f"guardrails.yaml: max_searches {s.guardrails.max_searches} cannot cover "
+            f"max_sub_questions {s.guardrails.max_sub_questions} x researcher searches "
+            f"{per_card} = {needed}"
+        )
     if not (prompts / s.agents.report_check_prompt).is_file():
         problems.append(
             f"agents.yaml: report check prompt '{s.agents.report_check_prompt}' not found"

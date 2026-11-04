@@ -14,7 +14,7 @@ from research_assistant.agents.stubs import (
 from research_assistant.cli import main
 from research_assistant.graph.run import RunResult, run_research
 from research_assistant.interaction import AutoApproveIO, ScriptedIO
-from research_assistant.models import CardStatus, VerdictKind
+from research_assistant.models import Card, CardStatus, Verdict, VerdictKind
 from research_assistant.observability.audit import AuditLog
 from research_assistant.settings import Settings, load_settings
 
@@ -162,3 +162,50 @@ def test_cli_run_eof_at_the_prompt_exits_cleanly(
     monkeypatch.setattr("builtins.input", eof)
     assert main(["run", "q", "--config", str(CONFIG), "--data", str(tmp_path)]) == 0
     assert "declined" in capsys.readouterr().out
+
+
+def test_a_cap_trip_keeps_the_work_other_parallel_researchers_finished(tmp_path: Path) -> None:
+    r = go(tmp_path, settings(max_searches=2), sub_questions=3)
+    cards = list(r.board.cards.values())
+    in_review = [c for c in cards if c.status is CardStatus.IN_REVIEW]
+    blocked = [c for c in cards if c.status is CardStatus.BLOCKED]
+    assert r.status == "stopped" and len(in_review) == 2 and len(blocked) == 1
+    assert all(c.notes and c.sources for c in in_review)  # their research was not thrown away
+    assert "run stopped: budget exceeded: searches" in blocked[0].reason
+    report = Path(r.report_path or "").read_text()
+    assert "partial" in report and "not completed" in report and "blocked" in report
+
+
+def test_a_failing_critic_blocks_the_card_instead_of_crashing_the_run(tmp_path: Path) -> None:
+    class BrokenCritic:
+        def review(self, card: Card, round_number: int) -> Verdict:
+            raise RuntimeError("model said nonsense")
+
+    def make(env: AgentEnv) -> Agents:
+        return Agents(
+            StubPlanner(2),
+            StubResearcher(env.budget),
+            BrokenCritic(),
+            StubWriter(),  # type: ignore[arg-type]
+        )
+
+    r = run_research("Q?", settings(), tmp_path, AutoApproveIO(), make)
+    assert r.status == "completed"
+    assert {c.status for c in r.board.cards.values()} == {CardStatus.BLOCKED}
+    assert "review failed" in r.board.cards["c1"].reason
+
+
+def test_writer_out_of_budget_falls_back_to_the_approved_notes(tmp_path: Path) -> None:
+    from research_assistant.guardrails.budget import BudgetExceeded
+    from research_assistant.models import Board
+
+    class BudgetlessWriter:
+        def write(self, board: Board, question: str, stop_reason: str | None) -> str:
+            raise BudgetExceeded("llm_calls", 201, 200)
+
+    def make(env: AgentEnv) -> Agents:
+        return Agents(StubPlanner(1), StubResearcher(env.budget), StubCritic(), BudgetlessWriter())
+
+    r = run_research("Q?", settings(), tmp_path, AutoApproveIO(), make)
+    assert r.report_path and "Stub finding" in Path(r.report_path).read_text()
+    assert "writer_skipped" in event_types(r)

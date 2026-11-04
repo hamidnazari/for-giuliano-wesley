@@ -47,6 +47,8 @@ def sources_section(board: Board) -> list[str]:
     """The Sources section for approved cards, or nothing when there are none."""
     entries = [
         f"- [{s.source_id}] {s.title or s.locator}: {s.locator}"
+        if s.kind == "web"
+        else f"- [{s.source_id}] {s.title} (your document, chunk {s.locator})"
         for card in done_cards(board)
         for s in card.sources
     ]

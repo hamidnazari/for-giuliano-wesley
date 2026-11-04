@@ -6,6 +6,7 @@ from research_assistant.agents.build import REAL_AGENTS, agents_builder
 from research_assistant.agents.factory import MissingCredential
 from research_assistant.board.render import render_board
 from research_assistant.board.sink import load_snapshot
+from research_assistant.documents.index import DocIndex, Embedder, FastEmbedder, IndexUnusable
 from research_assistant.graph.run import run_research
 from research_assistant.interaction import AutoApproveIO, ConsoleIO
 from research_assistant.settings import ConfigError, load_settings
@@ -22,6 +23,38 @@ def _check_config(config_dir: Path) -> int:
     return 0
 
 
+def make_embedder(model_name: str) -> Embedder:
+    """The embedder used by `index` and `run`. Tests replace this with a model-free one."""
+    return FastEmbedder(model_name)
+
+
+def _index(args: argparse.Namespace) -> int:
+    try:
+        settings = load_settings(args.config)
+    except ConfigError as e:
+        print(e, file=sys.stderr)
+        return 1
+    ing = settings.tools.ingestion
+    try:
+        index, skipped = DocIndex.build(
+            args.path, make_embedder(ing.embedding_model), ing.chunk_size, ing.chunk_overlap
+        )
+    except FileNotFoundError:
+        print(f"not found: {args.path}", file=sys.stderr)
+        return 1
+    for item in skipped:
+        print(f"skipped: {item}", file=sys.stderr)
+    if not index.chunks:
+        print("nothing to index: no readable .md, .txt or .pdf text found", file=sys.stderr)
+        return 1
+    target = args.data / "index"
+    index.save(target)
+    print(
+        f"indexed {len(index.chunks)} chunks from {index.meta['documents']} documents -> {target}"
+    )
+    return 0
+
+
 def _run(args: argparse.Namespace) -> int:
     try:
         settings = load_settings(args.config)
@@ -35,13 +68,23 @@ def _run(args: argparse.Namespace) -> int:
         if "researcher" in args.real:
             cassette = args.cassette or args.data / "search_cassette.json"
             backend = make_backend(args.search, cassette)
+        docs_index = None
+        index_dir = args.index or args.data / "index"
+        if "researcher" in args.real and index_dir.exists():
+            embedder = make_embedder(settings.tools.ingestion.embedding_model)
+            docs_index = DocIndex.load(index_dir, embedder)
+            print(f"note: using document index ({len(docs_index.chunks)} chunks)", file=sys.stderr)
         make_agents = agents_builder(
-            settings, args.config / "prompts", args.real, search_backend=backend
+            settings,
+            args.config / "prompts",
+            args.real,
+            search_backend=backend,
+            docs_index=docs_index,
         )
     except MissingCredential as e:
         print(f"{e}. Put it in .env and run through mise (mise exec -- ...).", file=sys.stderr)
         return 1
-    except ValueError as e:
+    except (ValueError, IndexUnusable) as e:
         print(e, file=sys.stderr)
         return 1
 
@@ -106,14 +149,21 @@ def main(argv: list[str] | None = None) -> int:
         help="web search mode; record and replay use a cassette file",
     )
     run.add_argument("--cassette", type=Path, default=None, help="search cassette (JSON)")
+    run.add_argument("--index", type=Path, default=None, help="document index folder")
     run.add_argument("--kanzo", action="store_true", help="mirror the board into Kanzo")
     run.add_argument("--kanzo-home", type=Path, default=None, help="Kanzo data folder")
+    idx = sub.add_parser("index", help="index your own documents for the researchers")
+    idx.add_argument("path", type=Path, help="a file or folder of .md, .txt or .pdf files")
+    idx.add_argument("--config", type=Path, default=Path("config"))
+    idx.add_argument("--data", type=Path, default=Path("data"))
     board = sub.add_parser("board", help="print a run's board (latest run by default)")
     board.add_argument("--data", type=Path, default=Path("data"))
     board.add_argument("--run", default=None, help="run ID")
     args = parser.parse_args(argv)
     if args.command == "check-config":
         return _check_config(args.config)
+    if args.command == "index":
+        return _index(args)
     if args.command == "run":
         return _run(args)
     if args.command == "board":

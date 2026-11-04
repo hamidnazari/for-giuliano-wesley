@@ -70,6 +70,12 @@ CASES: list[tuple[str, str, Edit, str]] = [
     ("missing prompt", "agents.yaml", lambda d: d["writer"].update(prompt="gone.md"), "not found"),
     ("zero cap", "guardrails.yaml", lambda d: d.update(max_critic_rounds=0), "max_critic_rounds"),
     ("negative cap", "guardrails.yaml", lambda d: d.update(max_searches=-1), "max_searches"),
+    (
+        "search cap cannot cover the plan",
+        "guardrails.yaml",
+        lambda d: d.update(max_searches=10),
+        "cannot cover",
+    ),
     ("unknown key", "guardrails.yaml", lambda d: d.update(surprise=1), "surprise"),
     (
         "overlap too big",
