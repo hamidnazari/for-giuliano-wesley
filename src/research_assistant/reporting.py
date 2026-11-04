@@ -1,6 +1,25 @@
 """Report helpers shared by every Writer: which cards are gaps, and a plain report layout."""
 
+import re
+
 from research_assistant.models import Board, Card, CardStatus
+
+_MARKUP = re.compile(r"\[([^\]]*)\]\([^)]*\)|https?://\S+|[<>`#*_\[\]|]")
+
+
+def _link_text(m: re.Match[str]) -> str:
+    return m.group(1) if m.group(1) is not None else " "
+
+
+def clean_title(title: str, limit: int = 120) -> str:
+    """A page title made safe to print: no links, URLs, headings or line breaks.
+
+    Titles come from web pages, so they are untrusted. Link text is kept; the target is not.
+    """
+    text = _MARKUP.sub(_link_text, title)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
 
 _OPEN = (CardStatus.BACKLOG, CardStatus.IN_PROGRESS, CardStatus.IN_REVIEW)
 
@@ -48,9 +67,9 @@ def plain_report(board: Board, question: str, stop_reason: str | None) -> str:
 def sources_section(board: Board) -> list[str]:
     """The Sources section for approved cards, or nothing when there are none."""
     entries = [
-        f"- [{s.source_id}] {s.title or s.locator}: {s.locator}"
+        f"- [{s.source_id}] {clean_title(s.title) or s.locator}: {s.locator}"
         if s.kind == "web"
-        else f"- [{s.source_id}] {s.title} (your document, chunk {s.locator})"
+        else f"- [{s.source_id}] {clean_title(s.title)} (your document, chunk {s.locator})"
         for card in done_cards(board)
         for s in card.sources
     ]

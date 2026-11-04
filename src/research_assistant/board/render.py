@@ -1,6 +1,7 @@
 """Plain-text view of a board for the terminal."""
 
 from research_assistant.models import Board, Card, CardStatus
+from research_assistant.reporting import clean_title
 
 _TITLES = {
     CardStatus.BACKLOG: "Backlog",
@@ -47,7 +48,7 @@ def card_markdown(card: Card) -> str:
         parts.append(
             "**Sources**\n"
             + "\n".join(
-                f"- [{s.source_id}] {s.title or s.locator} ({s.locator})"
+                f"- [{s.source_id}] {clean_title(s.title) or s.locator} ({s.locator})"
                 + (
                     f", credibility {card.credibility[s.source_id]:.2f}"
                     if s.source_id in card.credibility
