@@ -5,11 +5,13 @@ description = "Multi-agent research assistant: a team of agents researches a que
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "fastembed>=0.9.1",
     "langchain-core>=1.7.5",
     "langchain-openai>=1.7.4",
     "langgraph>=1.2.19",
     "mcp>=2.3.0",
     "pydantic>=2.14.2",
+    "pypdf>=6.21.4",
     "pyyaml>=6.0.3",
     "tavily-python>=0.8.5",
 ]
