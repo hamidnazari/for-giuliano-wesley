@@ -3,6 +3,7 @@
 # do not share blind spots. Startup validation enforces this.
 rubric_version: "1"
 critic_rubric: critic_rubric.md
+report_check_prompt: report_check.md
 
 planner:
   model: anthropic/claude-sonnet-4.6
@@ -25,3 +26,4 @@ writer:
   model: anthropic/claude-sonnet-4.6
   prompt: writer.md
   tools: [render_report]
+  limits: {repairs: 2}

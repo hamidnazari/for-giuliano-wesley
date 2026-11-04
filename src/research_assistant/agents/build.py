@@ -6,13 +6,14 @@ from pathlib import Path
 from research_assistant.agents.factory import ModelFactory
 from research_assistant.agents.planner import LLMPlanner
 from research_assistant.agents.prompts import read_prompt
-from research_assistant.agents.protocols import Agents
+from research_assistant.agents.protocols import Agents, Writer
 from research_assistant.agents.stubs import StubCritic, StubPlanner, StubResearcher, StubWriter
+from research_assistant.agents.writer import LLMWriter, ReportChecker
 from research_assistant.guardrails.budget import Budget
 from research_assistant.observability.audit import AuditLog
 from research_assistant.settings import Settings
 
-REAL_AGENTS = ("planner",)  # grows as real agents are built
+REAL_AGENTS = ("planner", "writer")  # grows as real agents are built
 
 
 def agents_builder(
@@ -37,6 +38,20 @@ def agents_builder(
                 settings.guardrails.max_sub_questions,
                 spec.limits.get("clarifying_questions", 3),
             )
-        return Agents(planner, StubResearcher(budget), StubCritic(), StubWriter())
+        writer: Writer = StubWriter()
+        if "writer" in real:
+            spec = settings.agents.writer
+            checker = ReportChecker(
+                models.build("critic"),
+                read_prompt(prompts_dir, settings.agents.report_check_prompt),
+            )
+            writer = LLMWriter(
+                models.build("writer"),
+                checker,
+                read_prompt(prompts_dir, spec.prompt),
+                audit,
+                spec.limits.get("repairs", 2),
+            )
+        return Agents(planner, StubResearcher(budget), StubCritic(), writer)
 
     return make

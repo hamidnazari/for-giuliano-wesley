@@ -38,6 +38,7 @@ class AgentsConfig(Strict):
     critic: AgentSpec
     writer: AgentSpec
     critic_rubric: str = "critic_rubric.md"
+    report_check_prompt: str = "report_check.md"  # final entailment pass over the report
     rubric_version: str = Field(min_length=1)
 
     def by_name(self) -> dict[str, AgentSpec]:
@@ -135,6 +136,10 @@ def _cross_check(s: Settings, prompts: Path) -> list[str]:
         )
     if not (prompts / s.agents.critic_rubric).is_file():
         problems.append(f"agents.yaml: critic rubric '{s.agents.critic_rubric}' not found")
+    if not (prompts / s.agents.report_check_prompt).is_file():
+        problems.append(
+            f"agents.yaml: report check prompt '{s.agents.report_check_prompt}' not found"
+        )
     ing = s.tools.ingestion
     if ing.chunk_overlap >= ing.chunk_size:
         problems.append("tools.yaml: ingestion: chunk_overlap must be smaller than chunk_size")
