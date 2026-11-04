@@ -38,6 +38,48 @@ next to `board.json` and `audit.jsonl` (every tool call and model call).
 Options: `--search live|record|replay` with `--cassette <file>` to record or replay web results,
 `--kanzo` to mirror the board into a Kanzo kanban.
 
+## Watching a run on a kanban board (Kanzo)
+
+[Kanzo](https://github.com/emanuele-em/kanzo) is a self-hosted kanban board. `mise install`
+installs the pinned version. It is optional: the run works the same without it.
+
+1. Start the board. It opens http://localhost:4242 (the port is set in `~/kanzo/config.toml`):
+
+        mise exec -- kanzo                      # or: kanzo --port 4300 --no-open
+        mise exec -- kanzo --home ~/some/dir    # use a different data folder
+
+2. Run with `--kanzo`, in another terminal. The board can stay open: cards appear and move as
+   the run progresses.
+
+        mise exec -- uv run research-assistant run "your question" --kanzo \
+          --real planner --real researcher --real critic --real writer
+
+   Add `--kanzo-home <dir>` if the board uses a data folder other than `~/kanzo`.
+
+3. In the browser, each run is one project named `Research <run-id>`, with one task per card.
+   Open a task to see its sub-question, notes, sources with credibility and the
+   researcher and Critic comments.
+
+| Our card status | Kanzo column |
+| --- | --- |
+| Backlog | todo |
+| In progress | doing |
+| In review | review |
+| Done | done |
+| Blocked / Rejected | review, tagged `blocked` or `rejected` |
+
+The board is a read-only mirror. The run decides what moves where; changes made in Kanzo do not
+flow back, and a Kanzo failure is logged as `sink_error` without stopping the run.
+
+Other commands:
+
+    mise exec -- kanzo export -p <run-id>      # dump one run's board as Markdown (-f json for JSON)
+    mise exec -- kanzo service                 # start the board automatically at login
+    uv run research-assistant board            # the same board as text, without Kanzo
+
+Kanzo has no logins and listens on 127.0.0.1 only. Keep it that way unless you trust your
+network.
+
 ## Checks
 
     mise run check             # format, lint, types, tests, config. No keys needed.
