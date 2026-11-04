@@ -1,4 +1,5 @@
 [tools]
+"github:emanuele-em/kanzo" = "0.3.0"
 gitleaks = "8.30.1"
 python = "3.13"
 uv = "0.12.22"
