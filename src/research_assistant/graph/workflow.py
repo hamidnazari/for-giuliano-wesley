@@ -10,7 +10,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Send
 
-from research_assistant.agents.protocols import Agents
+from research_assistant.agents.protocols import Agents, Writer
 from research_assistant.board.ops import Block, Claim, CreateCard, Op, Reject, Review, SubmitWork
 from research_assistant.board.reducer import apply
 from research_assistant.board.sink import BoardSink
@@ -36,20 +36,28 @@ class RunContext:
     sinks: Sequence[BoardSink]
 
 
-def write_report(ctx: RunContext, board: Board, question: str, stop_reason: str | None) -> str:
-    """Ask the Writer for markdown and save it with the render_report tool."""
+def produce_markdown(
+    writer: Writer, audit: AuditLog, board: Board, question: str, stop_reason: str | None
+) -> str:
+    """The report text that will be saved: the Writer's, or the verbatim notes if it fails."""
     try:
-        markdown = ctx.agents.writer.write(board, question, stop_reason)
+        markdown = writer.write(board, question, stop_reason)
     except BudgetExceeded as e:  # no budget left for the model: fall back to the approved notes
-        ctx.audit.record("writer", "writer_skipped", {"reason": str(e)})
+        audit.record("writer", "writer_skipped", {"reason": str(e)})
         markdown = plain_report(board, question, stop_reason or str(e))
     issues = lint_report(markdown, board)
     if issues:  # whatever wrote it, the report on disk must pass lint
-        ctx.audit.record("writer", "report_lint_failed", {"problems": issues})
+        audit.record("writer", "report_lint_failed", {"problems": issues})
         markdown = plain_report(board, question, stop_reason)
         left = lint_report(markdown, board)
         if left:  # the fallback itself is broken: write it anyway, but make it visible
-            ctx.audit.record("writer", "fallback_lint_failed", {"problems": left})
+            audit.record("writer", "fallback_lint_failed", {"problems": left})
+    return markdown
+
+
+def write_report(ctx: RunContext, board: Board, question: str, stop_reason: str | None) -> str:
+    """Ask the Writer for markdown and save it with the render_report tool."""
+    markdown = produce_markdown(ctx.agents.writer, ctx.audit, board, question, stop_reason)
     path = ctx.writer_tools.call("render_report", markdown=markdown)
     ctx.audit.record("writer", "report_written", {"path": path, "partial": bool(stop_reason)})
     return str(path)

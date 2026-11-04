@@ -15,9 +15,16 @@ from research_assistant.evals.critic_eval import (
     load_thresholds,
     run_critic_eval,
 )
+from research_assistant.evals.injection_cases import load_injection_cases
+from research_assistant.evals.injection_eval import (
+    check_injection,
+    format_injection,
+    load_injection_thresholds,
+    run_injection_eval,
+)
 from research_assistant.graph.run import run_research
 from research_assistant.interaction import AutoApproveIO, ConsoleIO
-from research_assistant.settings import ConfigError, load_settings
+from research_assistant.settings import ConfigError, Settings, load_settings
 from research_assistant.tools.search import make_backend
 
 
@@ -31,11 +38,30 @@ def _check_config(config_dir: Path) -> int:
     return 0
 
 
+def _eval_injection(args: argparse.Namespace, settings: Settings) -> int:
+    cases = load_injection_cases(args.cases or Path("evals/injection/cases.yaml"))
+    report = run_injection_eval(cases, settings, args.config / "prompts")
+    print(format_injection(report))
+    if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+    failures = check_injection(report, load_injection_thresholds(args.thresholds))
+    for f in failures:
+        print(f"FAIL: {f}", file=sys.stderr)
+    print("gate: " + ("FAILED" if failures else "passed"))
+    return 1 if failures else 0
+
+
 def _eval(args: argparse.Namespace) -> int:
     try:
         settings = load_settings(args.config)
+        if args.suite == "injection":
+            return _eval_injection(args, settings)
         report = run_critic_eval(
-            load_cases(args.cases), settings, args.config / "prompts", repeats=args.repeats
+            load_cases(args.cases or Path("evals/critic/cases.yaml")),
+            settings,
+            args.config / "prompts",
+            repeats=args.repeats,
         )
     except ConfigError as e:
         print(e, file=sys.stderr)
@@ -189,8 +215,8 @@ def main(argv: list[str] | None = None) -> int:
     idx.add_argument("--config", type=Path, default=Path("config"))
     idx.add_argument("--data", type=Path, default=Path("data"))
     ev = sub.add_parser("eval", help="score the Critic on planted-defect cards (needs API keys)")
-    ev.add_argument("suite", choices=["critic"])
-    ev.add_argument("--cases", type=Path, default=Path("evals/critic/cases.yaml"))
+    ev.add_argument("suite", choices=["critic", "injection"])
+    ev.add_argument("--cases", type=Path, default=None)
     ev.add_argument("--thresholds", type=Path, default=Path("evals/thresholds.yaml"))
     ev.add_argument("--config", type=Path, default=Path("config"))
     ev.add_argument("--out", type=Path, default=None, help="write the full results as JSON")

@@ -121,7 +121,7 @@ def _noop(**_: Any) -> list[Any]:
     return []
 
 
-def _flagged_notes(verdict: Verdict, count: int) -> set[int]:
+def flagged_notes(verdict: Verdict, count: int) -> set[int]:
     if verdict.kind is VerdictKind.REJECT:
         return set(range(1, count + 1))  # the whole card was thrown out
     if verdict.kind is VerdictKind.SPLIT:
@@ -197,7 +197,7 @@ def run_critic_eval(
             for case in cases:
                 critic, card = build_case(case, model, settings, prompt, budget, audit)
                 verdict = critic.review(card, 1)
-                flagged = _flagged_notes(verdict, len(case.notes))
+                flagged = flagged_notes(verdict, len(case.notes))
                 for i, note in enumerate(case.notes, start=1):
                     results.append(
                         NoteResult(
