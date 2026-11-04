@@ -1,0 +1,8 @@
+# Gates a PR must meet. Values come from measured runs and are reviewed like code.
+# Measured on the current Critic (gpt-5.4, rubric 3), 3 runs of 14 defects and 13 good notes:
+# catch rate 1.00, false positive rate 0.00. A deliberately broken Critic prompt scored 0.71.
+critic:
+  min_catch_rate: 0.9
+  max_false_positive_rate: 0.15
+  min_catch_by_type:
+    fabricated_quote: 1.0   # checked mechanically, so it must never be missed

@@ -1,4 +1,5 @@
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -7,6 +8,13 @@ from research_assistant.agents.factory import MissingCredential
 from research_assistant.board.render import render_board
 from research_assistant.board.sink import load_snapshot
 from research_assistant.documents.index import DocIndex, Embedder, FastEmbedder, IndexUnusable
+from research_assistant.evals.cases import load_cases
+from research_assistant.evals.critic_eval import (
+    check_thresholds,
+    format_report,
+    load_thresholds,
+    run_critic_eval,
+)
 from research_assistant.graph.run import run_research
 from research_assistant.interaction import AutoApproveIO, ConsoleIO
 from research_assistant.settings import ConfigError, load_settings
@@ -21,6 +29,29 @@ def _check_config(config_dir: Path) -> int:
         return 1
     print(f"config ok: {config_dir}")
     return 0
+
+
+def _eval(args: argparse.Namespace) -> int:
+    try:
+        settings = load_settings(args.config)
+        report = run_critic_eval(
+            load_cases(args.cases), settings, args.config / "prompts", repeats=args.repeats
+        )
+    except ConfigError as e:
+        print(e, file=sys.stderr)
+        return 1
+    except MissingCredential as e:
+        print(f"{e}. Put it in .env and run through mise (mise exec -- ...).", file=sys.stderr)
+        return 1
+    print(format_report(report))
+    if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+    failures = check_thresholds(report, load_thresholds(args.thresholds))
+    for f in failures:
+        print(f"FAIL: {f}", file=sys.stderr)
+    print("gate: " + ("FAILED" if failures else "passed"))
+    return 1 if failures else 0
 
 
 def make_embedder(model_name: str) -> Embedder:
@@ -157,12 +188,21 @@ def main(argv: list[str] | None = None) -> int:
     idx.add_argument("path", type=Path, help="a file or folder of .md, .txt or .pdf files")
     idx.add_argument("--config", type=Path, default=Path("config"))
     idx.add_argument("--data", type=Path, default=Path("data"))
+    ev = sub.add_parser("eval", help="score the Critic on planted-defect cards (needs API keys)")
+    ev.add_argument("suite", choices=["critic"])
+    ev.add_argument("--cases", type=Path, default=Path("evals/critic/cases.yaml"))
+    ev.add_argument("--thresholds", type=Path, default=Path("evals/thresholds.yaml"))
+    ev.add_argument("--config", type=Path, default=Path("config"))
+    ev.add_argument("--out", type=Path, default=None, help="write the full results as JSON")
+    ev.add_argument("--repeats", type=int, default=1)
     board = sub.add_parser("board", help="print a run's board (latest run by default)")
     board.add_argument("--data", type=Path, default=Path("data"))
     board.add_argument("--run", default=None, help="run ID")
     args = parser.parse_args(argv)
     if args.command == "check-config":
         return _check_config(args.config)
+    if args.command == "eval":
+        return _eval(args)
     if args.command == "index":
         return _index(args)
     if args.command == "run":

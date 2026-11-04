@@ -1,0 +1,259 @@
+# Planted-defect cases for the Critic. Every page is frozen text, so the eval needs no network.
+# Each note says what is expected: "ok" (faithful to its source) or the defect type planted in it.
+# A note counts as caught when the Critic cuts it from the card.
+
+cases:
+  - id: pgvector-basics
+    sub_question: What does pgvector offer and how do its index types compare?
+    sources:
+      - id: c1-s1
+        url: https://docs.example/pgvector-readme
+        title: pgvector README
+        page: >
+          pgvector is an open-source extension for PostgreSQL that adds vector similarity search.
+          It supports exact and approximate nearest neighbor search with L2 distance, inner product
+          and cosine distance. Two approximate index types are available: HNSW and IVFFlat. HNSW has
+          a better speed-recall tradeoff than IVFFlat, but it has slower build times and uses more
+          memory. The vector type can be indexed for up to 2,000 dimensions; vectors with up to
+          16,000 dimensions can be stored.
+    notes:
+      - text: pgvector adds vector similarity search to PostgreSQL and supports L2 distance, inner product and cosine distance.
+        sources: [c1-s1]
+        expect: ok
+      - text: HNSW has a better speed-recall tradeoff than IVFFlat but builds more slowly and uses more memory.
+        sources: [c1-s1]
+        expect: ok
+      - text: pgvector can index vectors with any number of dimensions.
+        sources: [c1-s1]
+        expect: overstatement
+      - text: HNSW indexes build faster and use less memory than IVFFlat indexes.
+        sources: [c1-s1]
+        expect: contradiction
+
+  - id: scale-limits
+    sub_question: At what scale does pgvector stop being enough?
+    sources:
+      - id: c1-s1
+        url: https://eng.example/blog/search-store-evaluation
+        title: How we chose a store for product search
+        page: >
+          Our internal evaluation found pgvector sufficient up to roughly 5 million embeddings.
+          Beyond that size, approximate nearest neighbor query latency exceeded our 150 ms budget.
+          At that point we would move to a dedicated engine that keeps HNSW indexes in memory.
+    notes:
+      - text: In one internal evaluation, pgvector was sufficient up to roughly 5 million embeddings.
+        sources: [c1-s1]
+        expect: ok
+      - text: Query latency exceeded a 150 ms budget beyond that size.
+        sources: [c1-s1]
+        expect: ok
+      - text: In one internal evaluation, pgvector was sufficient up to roughly 50 million embeddings.
+        sources: [c1-s1]
+        expect: contradiction
+      - text: The team recommended migrating to Pinecone once the dataset grew.
+        sources: [c1-s1]
+        expect: fake_citation
+
+  - id: operations
+    sub_question: What are the operational trade-offs of keeping vectors in PostgreSQL?
+    sources:
+      - id: c1-s1
+        url: https://ops.example/blog/vectors-in-postgres
+        title: Running vectors inside PostgreSQL
+        page: >
+          Running vectors inside PostgreSQL means you reuse your existing backup, monitoring and
+          access control setup. There is no separate cluster to operate, although a large vector
+          index still needs memory and maintenance work like any other index.
+    notes:
+      - text: Keeping vectors in PostgreSQL lets a team reuse its existing backup and monitoring setup.
+        sources: [c1-s1]
+        expect: ok
+      - text: 'The author states "vector search in Postgres is faster than any dedicated database in every benchmark".'
+        sources: [c1-s1]
+        expect: fabricated_quote
+      - text: Running vectors in PostgreSQL eliminates all operational cost.
+        sources: [c1-s1]
+        expect: overstatement
+
+  - id: weak-source
+    sub_question: Which open-source vector databases exist and how scalable are they?
+    sources:
+      - id: c1-s1
+        url: https://qdrant.example/documentation/overview
+        title: Qdrant documentation, overview
+        page: >
+          Qdrant is an open-source vector database written in Rust. Each stored vector can carry a
+          JSON payload, and queries can filter on payload fields while searching by similarity.
+      - id: c1-s2
+        url: https://viral-tech-tips.example/15-vector-db-secrets
+        title: 15 Vector Database SECRETS Experts Do Not Want You To Know!!!
+        page: >
+          SHOCKING!! Milvus can handle TEN BILLION vectors with ZERO downtime and no tuning at all,
+          say industry insiders (we cannot name them). Posted by admin. Click here to download our
+          free ebook and subscribe for more insider secrets.
+    notes:
+      - text: Qdrant is an open-source vector database written in Rust that supports filtering on payload fields.
+        sources: [c1-s1]
+        expect: ok
+      - text: Milvus can handle ten billion vectors with zero downtime and no tuning.
+        sources: [c1-s2]
+        expect: weak_source
+
+  - id: wrong-source
+    sub_question: Which managed vector services offer serverless pricing, and what search modes exist?
+    sources:
+      - id: c1-s1
+        url: https://cache.example/docs/redis-eviction
+        title: Redis eviction policies
+        page: >
+          Redis supports several eviction policies when memory is full, including allkeys-lru,
+          volatile-lru and noeviction. The policy is set with the maxmemory-policy directive.
+      - id: c1-s2
+        url: https://weaviate.example/docs/hybrid-search
+        title: Weaviate documentation, hybrid search
+        page: >
+          Weaviate supports hybrid search, which combines keyword search with vector search and
+          merges the two result lists into a single ranking.
+    notes:
+      - text: Pinecone offers a serverless tier that scales to zero when idle.
+        sources: [c1-s1]
+        expect: fake_citation
+      - text: Weaviate supports hybrid search that combines keyword search and vector search.
+        sources: [c1-s2]
+        expect: ok
+
+  - id: hosting
+    sub_question: How can Pinecone be deployed?
+    sources:
+      - id: c1-s1
+        url: https://pinecone.example/docs/overview
+        title: Pinecone documentation, overview
+        page: >
+          Pinecone is a fully managed vector database service. It runs in the cloud and cannot be
+          self-hosted; customers use it through an API.
+    notes:
+      - text: Pinecone is offered as a fully managed service used through an API.
+        sources: [c1-s1]
+        expect: ok
+      - text: Pinecone can be self-hosted on your own Kubernetes cluster.
+        sources: [c1-s1]
+        expect: contradiction
+
+  - id: clean-card
+    sub_question: How do Qdrant and Weaviate handle filtering and search modes?
+    sources:
+      - id: c1-s1
+        url: https://qdrant.example/documentation/filtering
+        title: Qdrant documentation, filtering
+        page: >
+          Qdrant lets you attach a JSON payload to every vector. A query can combine similarity
+          search with conditions on payload fields, such as matching a keyword or a numeric range.
+          Filtering is applied during the search rather than after it.
+      - id: c1-s2
+        url: https://weaviate.example/docs/search
+        title: Weaviate documentation, search
+        page: >
+          Weaviate offers vector search, keyword search and hybrid search. Hybrid search combines
+          the keyword and vector rankings. Results can also be filtered on object properties.
+    notes:
+      - text: Qdrant can combine similarity search with conditions on payload fields.
+        sources: [c1-s1]
+        expect: ok
+      - text: In Qdrant, filtering is applied during the search instead of afterwards.
+        sources: [c1-s1]
+        expect: ok
+      - text: Weaviate offers vector, keyword and hybrid search.
+        sources: [c1-s2]
+        expect: ok
+      - text: Weaviate can filter results on object properties.
+        sources: [c1-s2]
+        expect: ok
+
+  - id: benchmark
+    sub_question: How did pgvector perform against Qdrant in one benchmark?
+    sources:
+      - id: c1-s1
+        url: https://bench.example/posts/pgvector-vs-qdrant-1m
+        title: pgvector vs Qdrant on one million vectors
+        page: >
+          In our test on 1 million 768-dimension vectors, pgvector with HNSW returned results at
+          95% recall with a median latency of 8 ms. Qdrant reached 9 ms at the same recall. We ran
+          a single configuration on one machine, so treat the numbers as indicative only.
+    notes:
+      - text: In one test on 1 million vectors, pgvector with HNSW reached 95% recall at a median latency of 8 ms.
+        sources: [c1-s1]
+        expect: ok
+      - text: pgvector is faster than Qdrant in general.
+        sources: [c1-s1]
+        expect: overstatement
+      - text: In the same test pgvector reached 99% recall at a median latency of 8 ms.
+        sources: [c1-s1]
+        expect: contradiction
+
+  # ---- subtler cases: causal wording, dates, claims narrower than the page, half-supported notes ----
+  - id: causal-wording
+    sub_question: What happened to latency after the move to HNSW indexes?
+    sources:
+      - id: c1-s1
+        url: https://eng.example/blog/hnsw-migration
+        title: Our HNSW migration
+        page: >
+          After we moved to HNSW indexes, p95 query latency fell from 120 ms to 45 ms. The change
+          coincided with a hardware upgrade the same week, so we cannot say how much of the
+          improvement came from each.
+    notes:
+      - text: After the move to HNSW indexes, p95 query latency fell from 120 ms to 45 ms.
+        sources: [c1-s1]
+        expect: ok
+      - text: P95 query latency ended up below 50 ms.
+        sources: [c1-s1]
+        expect: ok
+      - text: Switching to HNSW indexes reduced p95 latency from 120 ms to 45 ms.
+        sources: [c1-s1]
+        expect: overstatement
+
+  - id: release-dates
+    sub_question: When did pgvector gain HNSW indexes and parallel builds?
+    sources:
+      - id: c1-s1
+        url: https://github.example/pgvector/changelog
+        title: pgvector changelog
+        page: >
+          pgvector 0.5.0, released in August 2023, added HNSW indexes. Parallel index builds for
+          HNSW arrived in 0.6.0 in January 2024.
+    notes:
+      - text: HNSW indexes were added in pgvector 0.5.0, released in August 2023.
+        sources: [c1-s1]
+        expect: ok
+      - text: Parallel HNSW builds arrived after HNSW indexes themselves had been added.
+        sources: [c1-s1]
+        expect: ok
+      - text: HNSW indexes were added in pgvector 0.6.0 in January 2024.
+        sources: [c1-s1]
+        expect: contradiction
+
+  - id: half-supported
+    sub_question: What languages are Qdrant and Weaviate written in, and what does Qdrant filter on?
+    sources:
+      - id: c1-s1
+        url: https://qdrant.example/documentation/filtering-overview
+        title: Qdrant documentation, filtering
+        page: >
+          Qdrant supports filtering on payload fields during similarity search. Conditions can match
+          keywords, numeric ranges and geographic areas.
+      - id: c1-s2
+        url: https://weaviate.example/docs/architecture
+        title: Weaviate documentation, architecture
+        page: >
+          Weaviate is written in Go. It stores objects together with their vectors and exposes
+          GraphQL and REST APIs.
+    notes:
+      - text: Qdrant supports payload filtering and Weaviate is written in Go.
+        sources: [c1-s1, c1-s2]
+        expect: ok
+      - text: Qdrant is written in Rust and Weaviate is written in Go.
+        sources: [c1-s1, c1-s2]
+        expect: fake_citation
+      - text: Weaviate exposes GraphQL and REST APIs.
+        sources: [c1-s2]
+        expect: ok

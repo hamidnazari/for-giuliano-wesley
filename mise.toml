@@ -38,3 +38,7 @@ run = "gitleaks git --redact --verbose"
 [tasks.check]
 description = "All QA gates except the history secret scan"
 depends = ["format", "lint", "typecheck", "test", "check-config"]
+
+[tasks."eval:critic"]
+description = "Score the Critic on planted defects (needs KILO_API_KEY)"
+run = "uv run research-assistant eval critic"

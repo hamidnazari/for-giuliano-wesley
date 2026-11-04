@@ -1,0 +1,122 @@
+import json
+from pathlib import Path
+
+import pytest
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage
+
+import research_assistant.cli as cli
+from research_assistant.agents.factory import AgentModel
+from research_assistant.evals.cases import DEFECT_TYPES, OK, CriticCase, load_cases
+from research_assistant.evals.critic_eval import (
+    CriticThresholds,
+    EvalReport,
+    NoteResult,
+    check_thresholds,
+    format_report,
+    load_thresholds,
+    run_critic_eval,
+)
+from research_assistant.guardrails.budget import Budget
+from research_assistant.observability.audit import AuditLog
+from research_assistant.settings import load_settings
+
+ROOT = Path(__file__).parent.parent
+CASES = ROOT / "evals" / "critic" / "cases.yaml"
+CONFIG = ROOT / "config"
+
+
+def reply_for(case: CriticCase, perfect: bool) -> str:
+    """A scripted Critic: either judges every note correctly, or approves everything."""
+    labels = [
+        {
+            "index": i,
+            "label": "supported" if (not perfect or n.expect == OK) else "unsupported",
+            "reason": "scripted",
+        }
+        for i, n in enumerate(case.notes, start=1)
+    ]
+    ratings = {s.id: 0.9 for s in case.sources}
+    if perfect:
+        for n in case.notes:
+            if n.expect == "weak_source":
+                ratings[n.sources[0]] = 0.1
+    return json.dumps(
+        {
+            "notes": labels,
+            "source_ratings": ratings,
+            "recommendation": "revise" if perfect else "approve",
+        }
+    )
+
+
+def run(perfect: bool, repeats: int = 1) -> EvalReport:
+    cases = load_cases(CASES)
+    settings = load_settings(CONFIG)
+    replies = [reply_for(c, perfect) for _ in range(repeats) for c in cases]
+
+    def factory(budget: Budget, audit: AuditLog) -> AgentModel:
+        fake = GenericFakeChatModel(messages=iter([AIMessage(content=r) for r in replies]))
+        return AgentModel("critic", "scripted/oracle", fake, budget, audit)
+
+    return run_critic_eval(cases, settings, CONFIG / "prompts", factory, repeats)
+
+
+def test_the_shipped_cases_cover_every_defect_type_and_have_good_notes() -> None:
+    notes = [n for c in load_cases(CASES) for n in c.notes]
+    assert {n.expect for n in notes if n.expect != OK} == DEFECT_TYPES
+    assert sum(n.expect == OK for n in notes) >= 10 and sum(n.expect != OK for n in notes) >= 10
+
+
+def test_every_case_page_is_frozen_text_and_ids_are_valid() -> None:
+    for c in load_cases(CASES):
+        assert all(s.page.strip() for s in c.sources) and c.notes
+
+
+def test_a_perfect_critic_scores_one_and_passes_the_gate() -> None:
+    report = run(perfect=True)
+    assert report.catch_rate == 1.0 and report.false_positive_rate == 0.0
+    assert check_thresholds(report, load_thresholds(ROOT / "evals" / "thresholds.yaml")) == []
+
+
+def test_a_lenient_critic_fails_the_gate_but_the_quote_check_still_works() -> None:
+    report = run(perfect=False)
+    failures = check_thresholds(report, load_thresholds(ROOT / "evals" / "thresholds.yaml"))
+    assert report.catch_rate < 0.3 and any("catch rate" in f for f in failures)
+    # The quote check is mechanical, so even an approve-everything model cannot pass a fake quote.
+    caught, total = report.by_type()["fabricated_quote"]
+    assert caught == total == 1
+    assert not any("fabricated_quote" in f for f in failures)
+
+
+def test_repeats_multiply_the_samples() -> None:
+    assert len(run(perfect=True, repeats=2).results) == 2 * len(run(perfect=True).results)
+
+
+def test_threshold_checks_and_report_text() -> None:
+    results = [
+        NoteResult("a", 1, "good", OK, True, "revise"),
+        NoteResult("a", 2, "bad quote", "fabricated_quote", False, "approve"),
+        NoteResult("a", 3, "bad", "contradiction", True, "revise"),
+    ]
+    report = EvalReport(results, "m", "3", 1, 10)
+    strict = CriticThresholds(
+        min_catch_rate=0.9, max_false_positive_rate=0.1, min_catch_by_type={"fabricated_quote": 1.0}
+    )
+    failures = check_thresholds(report, strict)
+    assert len(failures) == 3
+    assert any("fabricated_quote: caught 0/1" in f for f in failures)
+    text = format_report(report)
+    assert "catch rate" in text and "missed defects" in text and "wrongly cut" in text
+    assert report.to_dict()["by_type"]["contradiction"] == {"caught": 1, "total": 1}
+
+
+def test_cli_eval_needs_the_api_key(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("KILO_API_KEY", raising=False)
+    code = cli.main(
+        ["eval", "critic", "--cases", str(CASES), "--config", str(CONFIG),
+         "--thresholds", str(ROOT / "evals" / "thresholds.yaml")]
+    )  # fmt: skip
+    assert code == 1 and "KILO_API_KEY is not set" in capsys.readouterr().err
