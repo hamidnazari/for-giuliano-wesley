@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from research_assistant.board.ops import (
@@ -173,3 +175,24 @@ def test_in_memory_sink_records() -> None:
     b = apply(board(), ops)
     sink.sync(b, ops)
     assert sink.ops == ops and sink.latest == b and sink.latest is not b
+
+
+def test_snapshot_roundtrip_and_board_command(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from research_assistant.board.sink import JsonSnapshotSink, load_snapshot
+    from research_assistant.cli import main
+
+    ops = [
+        CreateCard(op_id="o1", card_id="c1", sub_question="q?"),
+        Claim(op_id="o2", card_id="c1"),
+        Block(op_id="o3", card_id="c1", reason="timed out"),
+    ]
+    b = apply(Board(run_id="r1"), ops)
+    path = tmp_path / "projects" / "r1" / "board.json"
+    JsonSnapshotSink(path).sync(b, ops)
+    assert load_snapshot(path) == b
+    assert main(["board", "--data", str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    assert "Blocked (1)" in out and "timed out" in out
+    assert main(["board", "--data", str(tmp_path), "--run", "nope"]) == 1
