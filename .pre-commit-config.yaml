@@ -3,22 +3,24 @@ repos:
     hooks:
       - id: gitleaks
         name: gitleaks
-        entry: gitleaks git --pre-commit --staged --redact --verbose
+        entry: mise run secrets:staged
         language: system
         pass_filenames: false
-      - id: ruff-format
+      - id: format
         name: ruff format
-        entry: uv run ruff format --check
+        entry: mise run format
         language: system
         types: [python]
-      - id: ruff-check
+        pass_filenames: false
+      - id: lint
         name: ruff check
-        entry: uv run ruff check
+        entry: mise run lint
         language: system
         types: [python]
-      - id: pyright
+        pass_filenames: false
+      - id: typecheck
         name: pyright
-        entry: uv run pyright
+        entry: mise run typecheck
         language: system
         types: [python]
         pass_filenames: false

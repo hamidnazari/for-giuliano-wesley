@@ -2,3 +2,35 @@
 gitleaks = "8.30.1"
 python = "3.13"
 uv = "0.12.22"
+
+[tasks.format]
+description = "Check formatting"
+run = "uv run ruff format --check ."
+
+[tasks.lint]
+description = "Lint"
+run = "uv run ruff check ."
+
+[tasks.typecheck]
+description = "Type check"
+run = "uv run pyright"
+
+[tasks.test]
+description = "Run tests"
+run = "uv run pytest -q"
+
+[tasks.check-config]
+description = "Validate the config directory"
+run = "uv run research-assistant check-config"
+
+[tasks."secrets:staged"]
+description = "Scan staged changes for secrets"
+run = "gitleaks git --pre-commit --staged --redact --verbose"
+
+[tasks."secrets:history"]
+description = "Scan full git history for secrets"
+run = "gitleaks git --redact --verbose"
+
+[tasks.check]
+description = "All QA gates except the history secret scan"
+depends = ["format", "lint", "typecheck", "test", "check-config"]

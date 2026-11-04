@@ -17,9 +17,5 @@ jobs:
           fetch-depth: 0
       - uses: jdx/mise-action@v2 # installs python, uv, gitleaks pinned in mise.toml
       - run: uv sync --locked
-      - run: uv run ruff format --check .
-      - run: uv run ruff check .
-      - run: uv run pyright
-      - run: uv run pytest -q
-      - run: uv run research-assistant check-config
-      - run: gitleaks git --redact --verbose
+      - run: mise run check
+      - run: mise run secrets:history
