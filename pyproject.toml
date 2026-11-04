@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "langchain-core>=1.7.5",
     "langchain-openai>=1.7.4",
+    "mcp>=2.3.0",
     "pydantic>=2.14.2",
     "pyyaml>=6.0.3",
     "tavily-python>=0.8.5",
